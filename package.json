@@ -1,0 +1,39 @@
+{
+  "name": "yc_search",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "sync:yc": "tsx scripts/sync-yc.ts",
+    "sync:scrape": "tsx scripts/scrape-companies.ts",
+    "sync:embed": "tsx scripts/embed-companies.ts",
+    "sync:all": "npm run db:migrate && npm run sync:yc && npm run sync:scrape && npm run sync:embed"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.2.4",
+    "next": "16.1.6",
+    "openai": "^6.21.0",
+    "p-limit": "^7.3.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}
