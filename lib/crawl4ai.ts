@@ -73,6 +73,11 @@ function isMissingCrawl4AiModule(stderr: string, errorMessage: string) {
   return combined.includes("ModuleNotFoundError: No module named 'crawl4ai'");
 }
 
+function isMissingPlaywrightBrowser(errorDetails: string) {
+  return errorDetails.includes("BrowserType.launch: Executable doesn't exist") ||
+    errorDetails.includes("playwright install");
+}
+
 function parseJsonFromStdout(stdout: string): Crawl4AiOutput {
   const lines = stdout
     .split(/\r?\n/)
@@ -114,6 +119,17 @@ export async function scrapeWebsiteMarkdown(url: string): Promise<string> {
       const output = parseJsonFromStdout(stdout);
       if (!output.success) {
         const details = output.error ?? stderr ?? "Unknown Crawl4AI error";
+        if (isMissingPlaywrightBrowser(details)) {
+          throw new Error(
+            [
+              `Playwright browser binaries are missing for Python runtime: ${pythonBin}`,
+              "Install Chromium for Playwright and rerun:",
+              `  ${pythonBin} -m playwright install chromium`,
+              "Or rerun the full bootstrap:",
+              "  make setup-python",
+            ].join("\n"),
+          );
+        }
         throw new Error(`Crawl4AI scrape failed: ${details}`);
       }
 

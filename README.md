@@ -42,6 +42,7 @@ What `make setup` does:
 - creates `.venv` via `uv`
 - installs Python deps from `requirements-crawl4ai.txt`
 - runs `python -m crawl4ai.install`
+- installs Playwright Chromium browser binaries
 - creates `.env` from `.env.example` (if missing)
 - ensures `.env` has `CRAWL4AI_PYTHON_BIN=.venv/bin/python`
 
@@ -51,6 +52,7 @@ If you prefer manual Python setup:
 uv venv .venv
 uv pip install --python .venv/bin/python -r requirements-crawl4ai.txt
 .venv/bin/python -m crawl4ai.install
+.venv/bin/python -m playwright install chromium
 ```
 
 Quick verification:

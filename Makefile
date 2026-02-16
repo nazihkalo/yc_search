@@ -26,6 +26,7 @@ setup-python:
 	$(UV) venv .venv
 	$(UV) pip install --python $(PYTHON_BIN) -r requirements-crawl4ai.txt
 	$(PYTHON_BIN) -m crawl4ai.install
+	$(PYTHON_BIN) -m playwright install chromium
 
 setup-env:
 	@if [ ! -f .env ]; then \
