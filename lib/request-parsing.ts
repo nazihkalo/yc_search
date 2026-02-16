@@ -23,6 +23,7 @@ export function parseSearchParams(searchParams: URLSearchParams): SearchParams {
   const filters: SearchFilters = {
     tags: parseCsv(searchParams.get("tags")),
     industries: parseCsv(searchParams.get("industries")),
+    batches: parseCsv(searchParams.get("batches")),
     years: parseCsv(searchParams.get("years"))
       .map((year) => Number(year))
       .filter((year) => Number.isFinite(year)),

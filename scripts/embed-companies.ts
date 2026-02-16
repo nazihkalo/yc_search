@@ -3,6 +3,7 @@ import pLimit from "p-limit";
 import { getDb, initializeDatabase } from "../lib/db";
 import { sha256 } from "../lib/hash";
 import { EMBEDDING_MODEL, getOpenAiClient } from "../lib/openai";
+import { ACTIVE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
 
 type EmbedCandidate = {
   id: number;
@@ -64,10 +65,11 @@ async function main() {
   initializeDatabase();
   const db = getDb();
   const openai = getOpenAiClient();
+  const source = ACTIVE_SNAPSHOT_SOURCE;
 
   const batchLimit = parseLimitArg();
   const candidates = db
-    .prepare<[{ limit: number }], EmbedCandidate>(`
+    .prepare<[{ limit: number; source: string }], EmbedCandidate>(`
       SELECT
         c.id,
         c.name,
@@ -83,12 +85,12 @@ async function main() {
         c.all_locations,
         s.content_markdown
       FROM companies c
-      LEFT JOIN website_snapshots s ON s.company_id = c.id
+      LEFT JOIN website_snapshots s ON s.company_id = c.id AND s.source = @source
       WHERE c.needs_embed = 1
       ORDER BY c.id ASC
       LIMIT @limit
     `)
-    .all({ limit: batchLimit });
+    .all({ limit: batchLimit, source });
 
   if (candidates.length === 0) {
     console.log("No companies need embeddings.");

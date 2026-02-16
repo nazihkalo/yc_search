@@ -41,14 +41,15 @@ CREATE TABLE IF NOT EXISTS companies (
 );
 
 CREATE TABLE IF NOT EXISTS website_snapshots (
-  company_id INTEGER PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT 'crawl4ai',
   website_url TEXT,
   content_markdown TEXT NOT NULL DEFAULT '',
   content_hash TEXT NOT NULL DEFAULT '',
-  source TEXT NOT NULL DEFAULT 'firecrawl',
   error TEXT,
   scraped_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (company_id, source),
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
 );
 
@@ -79,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_companies_industry ON companies(industry);
 CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_scrape ON companies(needs_scrape);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_embed ON companies(needs_embed);
+CREATE INDEX IF NOT EXISTS idx_snapshots_company_id ON website_snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_content_hash ON website_snapshots(content_hash);
 CREATE INDEX IF NOT EXISTS idx_embeddings_source_hash ON company_embeddings(source_hash);
 `;

@@ -3,27 +3,60 @@
 A full Next.js app for:
 
 - ingesting YC company data from `yc-oss/api`
-- scraping each company website once with Firecrawl
+- scraping each company website with Crawl4AI
 - storing metadata + scrape snapshots + embeddings in local SQLite
 - searching with both faceted keyword search and semantic search
+- visual analytics by batch over time with optional stacked color-by tags/industries
 
 ## Stack
 
 - Next.js (App Router, TypeScript, Tailwind)
 - SQLite via `better-sqlite3`
-- Firecrawl API for website scraping
+- Crawl4AI (Python runtime) for website scraping
 - OpenAI embeddings (`text-embedding-3-small`) for semantic ranking
 
 ## Environment
 
-Create `.env` with:
+Copy `.env.example` to `.env` (or let `make setup` do it) and set:
 
 ```bash
-FIRECRAWL_API_KEY=...
 OPENAI_API_KEY=...
 # optional:
 # DATABASE_PATH=./data/yc_search.sqlite
 # SYNC_TOKEN=your-shared-secret-for-api-sync
+# CRAWL4AI_PYTHON_BIN=python3
+# CRAWL4AI_PAGE_TIMEOUT_MS=35000
+```
+
+## Setup (recommended)
+
+Use `uv` + `make` for seamless local bootstrap:
+
+```bash
+make setup
+```
+
+What `make setup` does:
+
+- installs Node deps (`npm install`)
+- creates `.venv` via `uv`
+- installs Python deps from `requirements-crawl4ai.txt`
+- runs `python -m crawl4ai.install`
+- creates `.env` from `.env.example` (if missing)
+- ensures `.env` has `CRAWL4AI_PYTHON_BIN=.venv/bin/python`
+
+If you prefer manual Python setup:
+
+```bash
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements-crawl4ai.txt
+.venv/bin/python -m crawl4ai.install
+```
+
+Quick verification:
+
+```bash
+make doctor
 ```
 
 ## Run
@@ -59,10 +92,18 @@ npm run sync:scrape
 npm run sync:embed
 ```
 
+Targeted comparison run (random 2026 companies with existing FireCrawl snapshots):
+
+```bash
+npm run test:crawl4ai:compare
+# optional:
+# npm run test:crawl4ai:compare -- --limit=2
+```
+
 ### Incremental behavior
 
 - `sync:yc` upserts YC data and marks only changed/new companies for scrape/embed.
-- `sync:scrape` scrapes only rows with `needs_scrape = 1`.
+- `sync:scrape` scrapes only rows with `needs_scrape = 1` and writes snapshots with `source='crawl4ai'`.
 - `sync:embed` embeds only rows with `needs_embed = 1` and skips unchanged content hashes.
 
 This keeps scraping and embedding one-time unless company data/content changes.
@@ -72,10 +113,29 @@ This keeps scraping and embedding one-time unless company data/content changes.
 - `GET /api/facets` -> available tags, industries, years, stages, regions
 - `GET /api/search` -> keyword + faceted search
 - `GET /api/semantic-search` -> semantic search over precomputed embeddings
+- `GET /api/analytics` -> filtered batch chart data, optional stacked category series
+- `GET /api/companies/:id/embedding-map` -> PCA-based 2D embedding map for selected/similar/other company clusters
 - `POST /api/sync` -> runs `sync:all` (optional token auth via `Authorization: Bearer <SYNC_TOKEN>`)
+
+## Frontend behavior
+
+- Result cards show a small company logo to the left of the name (when available).
+- Clicking a tag or industry chip on a company card toggles that value in the filter sidebar.
+- The `Analytics` tab uses the current query/filters and draws bars by batch over time.
+- In `Analytics`, `Color by` supports:
+  - `none` (single bar per batch)
+  - `tags` (stacked bars by top tags + `Other`)
+  - `industries` (stacked bars by top industries + `Other`)
+- Each company detail page includes a 2D PCA embedding map:
+  - selected company (color 1)
+  - similar companies (color 2)
+  - all other companies (color 3)
+- Each company detail page also shows side-by-side website snapshots for:
+  - `crawl4ai`
+  - `firecrawl` (legacy baseline when available)
 
 ## Notes
 
 - Semantic search requires `OPENAI_API_KEY`.
-- Firecrawl scraping requires `FIRECRAWL_API_KEY`.
+- Crawl4AI requires a working Python env where `crawl4ai` is installed.
 - SQLite lives in `./data/yc_search.sqlite` by default.

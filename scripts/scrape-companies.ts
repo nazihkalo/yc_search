@@ -1,8 +1,9 @@
 import pLimit from "p-limit";
 
 import { getDb, initializeDatabase } from "../lib/db";
-import { scrapeWebsiteMarkdown } from "../lib/firecrawl";
+import { scrapeWebsiteMarkdown } from "../lib/crawl4ai";
 import { sha256 } from "../lib/hash";
+import { ACTIVE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
 
 type ScrapeCandidate = {
   id: number;
@@ -22,6 +23,7 @@ function parseLimitArg(defaultLimit = 500): number {
 async function main() {
   initializeDatabase();
   const db = getDb();
+  const source = ACTIVE_SNAPSHOT_SOURCE;
 
   const batchLimit = parseLimitArg();
   const candidates = db
@@ -57,12 +59,12 @@ async function main() {
       @website_url,
       @content_markdown,
       @content_hash,
-      'firecrawl',
+      @source,
       @error,
       CURRENT_TIMESTAMP,
       CURRENT_TIMESTAMP
     )
-    ON CONFLICT(company_id) DO UPDATE SET
+    ON CONFLICT(company_id, source) DO UPDATE SET
       website_url = excluded.website_url,
       content_markdown = excluded.content_markdown,
       content_hash = excluded.content_hash,
@@ -107,10 +109,14 @@ async function main() {
           const contentHash = sha256(markdown);
 
           const previous = db
-            .prepare<[{ id: number }], { content_hash: string }>(
-              "SELECT content_hash FROM website_snapshots WHERE company_id = @id",
+            .prepare<[{ id: number; source: string }], { content_hash: string }>(
+              `
+                SELECT content_hash
+                FROM website_snapshots
+                WHERE company_id = @id AND source = @source
+              `,
             )
-            .get({ id: candidate.id });
+            .get({ id: candidate.id, source });
 
           const contentChanged = !previous || previous.content_hash !== contentHash;
 
@@ -119,6 +125,7 @@ async function main() {
             website_url: website,
             content_markdown: markdown,
             content_hash: contentHash,
+            source,
             error: null,
           });
 
@@ -140,6 +147,7 @@ async function main() {
             website_url: website,
             content_markdown: "",
             content_hash: "",
+            source,
             error: errorMessage,
           });
           failedScrape.run({ id: candidate.id });

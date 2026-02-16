@@ -18,6 +18,17 @@ export function getEnv() {
   return parseBaseEnv();
 }
 
+export function getCrawl4AiPythonBin() {
+  const value = process.env.CRAWL4AI_PYTHON_BIN?.trim();
+  return value && value.length > 0 ? value : "python3";
+}
+
+export function getCrawl4AiPageTimeoutMs() {
+  const raw = process.env.CRAWL4AI_PAGE_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 35_000;
+}
+
 export function getFirecrawlApiKey() {
   const value = process.env.FIRECRAWL_API_KEY;
   if (!value) {

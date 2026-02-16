@@ -5,6 +5,7 @@ import type { CompanyRecord } from "./types";
 export type SearchFilters = {
   tags: string[];
   industries: string[];
+  batches: string[];
   years: number[];
   stages: string[];
   regions: string[];
@@ -22,6 +23,13 @@ export type SearchParams = {
 };
 
 type SearchResultRow = CompanyRecord;
+type AnalyticsCompanyRow = {
+  id: number;
+  batch: string | null;
+  launched_at: number | null;
+  tags: string;
+  industries: string;
+};
 
 function buildFilterWhereClause(
   filters: SearchFilters,
@@ -36,6 +44,14 @@ function buildFilterWhereClause(
   }
   if (filters.topCompany) {
     fragments.push("c.top_company = 1");
+  }
+
+  if (filters.batches.length > 0) {
+    const placeholders = filters.batches.map((_, index) => `@batch_${index}`);
+    filters.batches.forEach((batch, index) => {
+      params[`batch_${index}`] = batch;
+    });
+    fragments.push(`c.batch IN (${placeholders.join(", ")})`);
   }
 
   if (filters.years.length > 0) {
@@ -190,6 +206,40 @@ export function keywordSearch(params: SearchParams) {
   };
 }
 
+function buildKeywordAndFilterSql(params: SearchParams) {
+  const query = params.query.trim();
+  const whereClauses = ["1=1"];
+  const queryParams: Record<string, string | number> = {};
+
+  if (query.length > 0) {
+    queryParams.query = `%${query.toLowerCase()}%`;
+    whereClauses.push(`
+      (
+        LOWER(c.name) LIKE @query
+        OR LOWER(c.one_liner) LIKE @query
+        OR LOWER(c.long_description) LIKE @query
+        OR LOWER(c.search_text) LIKE @query
+      )
+    `);
+  }
+
+  buildFilterWhereClause(params.filters, queryParams, whereClauses);
+  return {
+    whereSql: whereClauses.join(" AND "),
+    queryParams,
+  };
+}
+
+function buildFilterOnlySql(filters: SearchFilters) {
+  const whereClauses = ["1=1"];
+  const queryParams: Record<string, string | number> = {};
+  buildFilterWhereClause(filters, queryParams, whereClauses);
+  return {
+    whereSql: whereClauses.join(" AND "),
+    queryParams,
+  };
+}
+
 function cosineSimilarity(a: number[], b: number[]) {
   if (a.length !== b.length || a.length === 0) {
     return 0;
@@ -216,12 +266,8 @@ export async function semanticSearch(params: SearchParams) {
   const db = getDb();
   const query = params.query.trim();
   if (!query) {
-    return {
-      total: 0,
-      page: params.page,
-      pageSize: params.pageSize,
-      results: [],
-    };
+    // Keep default semantic view behavior aligned with keyword mode.
+    return keywordSearch(params);
   }
 
   const openai = getOpenAiClient();
@@ -296,6 +342,40 @@ export async function semanticSearch(params: SearchParams) {
   };
 }
 
+export async function getSemanticTopCompanyIds(params: SearchParams, limit = 100) {
+  const db = getDb();
+  const query = params.query.trim();
+  if (!query) {
+    return [];
+  }
+
+  const { whereSql, queryParams } = buildFilterOnlySql(params.filters);
+  const openai = getOpenAiClient();
+  const embeddingResponse = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
+    input: query,
+  });
+  const queryVector = embeddingResponse.data[0]?.embedding ?? [];
+
+  const rows = db
+    .prepare<[{ [key: string]: string | number }], { id: number; vector: string }>(`
+      SELECT c.id, e.vector
+      FROM companies c
+      INNER JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${whereSql}
+    `)
+    .all(queryParams);
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      score: cosineSimilarity(queryVector, JSON.parse(row.vector) as number[]),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map((row) => row.id);
+}
+
 export function getFacets() {
   const db = getDb();
 
@@ -342,5 +422,156 @@ export function getFacets() {
     regions: formatFacet(regionCounts),
     stages: formatFacet(stageCounts),
     years: formatFacet(yearCounts).sort((left, right) => Number(right.value) - Number(left.value)),
+  };
+}
+
+type AnalyticsColorBy = "none" | "tags" | "industries";
+
+type BatchAggregate = {
+  batch: string;
+  year: number | null;
+  seasonOrder: number;
+  total: number;
+  categoryCounts: Map<string, number>;
+};
+
+function batchSortKey(batch: string): { year: number | null; seasonOrder: number } {
+  const compactBatchMatch = batch.match(/^([WSF])(\d{2})$/i);
+  if (compactBatchMatch) {
+    const season = compactBatchMatch[1].toUpperCase();
+    const year = 2000 + Number(compactBatchMatch[2]);
+    const seasonOrder = season === "W" ? 1 : season === "S" ? 2 : 3;
+    return { year, seasonOrder };
+  }
+
+  const namedBatchMatch = batch.match(/^(Winter|Spring|Summer|Fall)\s+(\d{4})$/i);
+  if (namedBatchMatch) {
+    const season = namedBatchMatch[1].toLowerCase();
+    const year = Number(namedBatchMatch[2]);
+    const seasonOrder =
+      season === "winter" ? 1 : season === "spring" ? 2 : season === "summer" ? 3 : 4;
+    return { year, seasonOrder };
+  }
+
+  return { year: null, seasonOrder: 99 };
+}
+
+function firstCategory(row: AnalyticsCompanyRow, colorBy: Exclude<AnalyticsColorBy, "none">) {
+  if (colorBy === "tags") {
+    const tags = parseJsonArray(row.tags);
+    return tags[0] ?? "Unspecified";
+  }
+
+  const industries = parseJsonArray(row.industries);
+  return industries[0] ?? "Unspecified";
+}
+
+export function getBatchAnalytics(
+  params: SearchParams,
+  colorBy: AnalyticsColorBy,
+  topN = 8,
+  companyIdSubset?: number[],
+) {
+  const db = getDb();
+  let rows: AnalyticsCompanyRow[] = [];
+
+  if (companyIdSubset && companyIdSubset.length > 0) {
+    const ids = [...new Set(companyIdSubset)];
+    const placeholders = ids.map((_, index) => `@id_${index}`);
+    const idParams: Record<string, number> = {};
+    ids.forEach((id, index) => {
+      idParams[`id_${index}`] = id;
+    });
+    rows = db
+      .prepare<[{ [key: string]: number }], AnalyticsCompanyRow>(`
+        SELECT c.id, c.batch, c.launched_at, c.tags, c.industries
+        FROM companies c
+        WHERE c.id IN (${placeholders.join(", ")})
+      `)
+      .all(idParams);
+  } else if (companyIdSubset && companyIdSubset.length === 0) {
+    rows = [];
+  } else {
+    const { whereSql, queryParams } = buildKeywordAndFilterSql(params);
+    rows = db
+      .prepare<[{ [key: string]: string | number }], AnalyticsCompanyRow>(`
+        SELECT c.id, c.batch, c.launched_at, c.tags, c.industries
+        FROM companies c
+        WHERE ${whereSql}
+      `)
+      .all(queryParams);
+  }
+
+  const aggregateByBatch = new Map<string, BatchAggregate>();
+  const globalCategoryCounts = new Map<string, number>();
+
+  for (const row of rows) {
+    const batch = row.batch ?? "Unspecified";
+    const sort = batchSortKey(batch);
+    const existing = aggregateByBatch.get(batch) ?? {
+      batch,
+      year: sort.year,
+      seasonOrder: sort.seasonOrder,
+      total: 0,
+      categoryCounts: new Map<string, number>(),
+    };
+    existing.total += 1;
+
+    if (colorBy !== "none") {
+      const category = firstCategory(row, colorBy);
+      existing.categoryCounts.set(category, (existing.categoryCounts.get(category) ?? 0) + 1);
+      globalCategoryCounts.set(category, (globalCategoryCounts.get(category) ?? 0) + 1);
+    }
+
+    aggregateByBatch.set(batch, existing);
+  }
+
+  const sortedBatches = [...aggregateByBatch.values()].sort((left, right) => {
+    const yearLeft = left.year ?? Number.MAX_SAFE_INTEGER;
+    const yearRight = right.year ?? Number.MAX_SAFE_INTEGER;
+    if (yearLeft !== yearRight) {
+      return yearLeft - yearRight;
+    }
+    if (left.seasonOrder !== right.seasonOrder) {
+      return left.seasonOrder - right.seasonOrder;
+    }
+    return left.batch.localeCompare(right.batch);
+  });
+
+  const topCategories =
+    colorBy === "none"
+      ? []
+      : [...globalCategoryCounts.entries()]
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, topN)
+          .map(([category]) => category);
+
+  const chartRows = sortedBatches.map((batchAggregate) => {
+    const row: Record<string, number | string | null> = {
+      batch: batchAggregate.batch,
+      year: batchAggregate.year,
+      total: batchAggregate.total,
+    };
+
+    if (colorBy === "none") {
+      return row;
+    }
+
+    let assigned = 0;
+    for (const category of topCategories) {
+      const value = batchAggregate.categoryCounts.get(category) ?? 0;
+      row[category] = value;
+      assigned += value;
+    }
+    row.Other = Math.max(0, batchAggregate.total - assigned);
+
+    return row;
+  });
+
+  return {
+    colorBy,
+    totalCompanies: rows.length,
+    series: colorBy === "none" ? ["total"] : [...topCategories, "Other"],
+    rows: chartRows,
   };
 }
