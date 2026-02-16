@@ -40,10 +40,6 @@ type CompanyDetailRow = {
   website_url_crawl4ai: string | null;
   scraped_at_crawl4ai: string | null;
   scrape_error_crawl4ai: string | null;
-  content_markdown_firecrawl: string | null;
-  website_url_firecrawl: string | null;
-  scraped_at_firecrawl: string | null;
-  scrape_error_firecrawl: string | null;
   vector: string | null;
 };
 
@@ -118,24 +114,18 @@ export function getCompanyDetail(companyId: number) {
         c.url,
         c.api,
         c.search_text,
-        COALESCE(s_crawl4ai.content_markdown, s_firecrawl.content_markdown) AS content_markdown,
-        COALESCE(s_crawl4ai.website_url, s_firecrawl.website_url) AS website_url,
-        COALESCE(s_crawl4ai.scraped_at, s_firecrawl.scraped_at) AS scraped_at,
-        COALESCE(s_crawl4ai.error, s_firecrawl.error) AS scrape_error,
+        s_crawl4ai.content_markdown,
+        s_crawl4ai.website_url,
+        s_crawl4ai.scraped_at,
+        s_crawl4ai.error AS scrape_error,
         s_crawl4ai.content_markdown AS content_markdown_crawl4ai,
         s_crawl4ai.website_url AS website_url_crawl4ai,
         s_crawl4ai.scraped_at AS scraped_at_crawl4ai,
         s_crawl4ai.error AS scrape_error_crawl4ai,
-        s_firecrawl.content_markdown AS content_markdown_firecrawl,
-        s_firecrawl.website_url AS website_url_firecrawl,
-        s_firecrawl.scraped_at AS scraped_at_firecrawl,
-        s_firecrawl.error AS scrape_error_firecrawl,
         e.vector
       FROM companies c
       LEFT JOIN website_snapshots s_crawl4ai
         ON s_crawl4ai.company_id = c.id AND s_crawl4ai.source = 'crawl4ai'
-      LEFT JOIN website_snapshots s_firecrawl
-        ON s_firecrawl.company_id = c.id AND s_firecrawl.source = 'firecrawl'
       LEFT JOIN company_embeddings e ON e.company_id = c.id
       WHERE c.id = @id
       LIMIT 1

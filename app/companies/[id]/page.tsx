@@ -95,25 +95,16 @@ export default async function CompanyPage({
           </div>
         ) : null}
 
-        {company.content_markdown_crawl4ai || company.content_markdown_firecrawl ? (
+        {company.content_markdown_crawl4ai ? (
           <div className="mt-5">
-            <h2 className="mb-2 text-sm font-medium text-zinc-700">Website snapshots</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <SnapshotPreview
-                source="Crawl4AI"
-                websiteUrl={company.website_url_crawl4ai}
-                scrapedAt={company.scraped_at_crawl4ai}
-                scrapeError={company.scrape_error_crawl4ai}
-                contentMarkdown={company.content_markdown_crawl4ai}
-              />
-              <SnapshotPreview
-                source="FireCrawl"
-                websiteUrl={company.website_url_firecrawl}
-                scrapedAt={company.scraped_at_firecrawl}
-                scrapeError={company.scrape_error_firecrawl}
-                contentMarkdown={company.content_markdown_firecrawl}
-              />
-            </div>
+            <h2 className="mb-2 text-sm font-medium text-zinc-700">Website snapshot (Crawl4AI)</h2>
+            <SnapshotPreview
+              source="Crawl4AI"
+              websiteUrl={company.website_url_crawl4ai}
+              scrapedAt={company.scraped_at_crawl4ai}
+              scrapeError={company.scrape_error_crawl4ai}
+              contentMarkdown={company.content_markdown_crawl4ai}
+            />
           </div>
         ) : null}
       </section>
@@ -224,6 +215,8 @@ function SnapshotPreview({
   contentMarkdown: string | null;
 }) {
   const scrapedLabel = scrapedAt ? new Date(scrapedAt).toLocaleString() : null;
+  const extractedUrls = contentMarkdown ? extractUrlsFromMarkdown(contentMarkdown) : [];
+  const scrapedDescription = contentMarkdown ? extractDescriptionFromMarkdown(contentMarkdown) : "";
 
   return (
     <article className="rounded-lg border border-zinc-200 p-3">
@@ -233,13 +226,95 @@ function SnapshotPreview({
         <p className="break-all">URL: {websiteUrl ?? "N/A"}</p>
       </div>
       {scrapeError ? <p className="mt-2 text-xs text-red-600">Error: {scrapeError}</p> : null}
+      {scrapedDescription ? (
+        <div className="mt-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Extracted description</h4>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-zinc-700">{scrapedDescription}</p>
+        </div>
+      ) : null}
+      <div className="mt-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Extracted URLs</h4>
+        {extractedUrls.length > 0 ? (
+          <ul className="mt-1 max-h-40 space-y-1 overflow-auto pr-1 text-sm">
+            {extractedUrls.map((url) => (
+              <li key={url}>
+                <a href={url} target="_blank" rel="noreferrer" className="block break-all text-zinc-700 underline">
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-sm text-zinc-400">No URLs extracted from markdown.</p>
+        )}
+      </div>
       {contentMarkdown ? (
-        <p className="mt-3 line-clamp-12 whitespace-pre-wrap text-sm leading-6 text-zinc-600">
-          {contentMarkdown}
-        </p>
+        <details className="mt-3 group">
+          <p className="line-clamp-12 whitespace-pre-wrap text-sm leading-6 text-zinc-600 group-open:hidden">
+            {contentMarkdown}
+          </p>
+          <summary className="cursor-pointer list-none text-sm font-medium text-zinc-700 underline-offset-2 hover:underline">
+            <span className="group-open:hidden">Expand full snapshot</span>
+            <span className="hidden group-open:inline">Collapse full snapshot</span>
+          </summary>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-600">{contentMarkdown}</p>
+        </details>
       ) : (
         <p className="mt-3 text-sm text-zinc-400">No snapshot content.</p>
       )}
     </article>
   );
+}
+
+function extractUrlsFromMarkdown(markdown: string) {
+  const markdownLinks = [...markdown.matchAll(/\[[^\]]*?\]\((https?:\/\/[^\s)]+)\)/g)].map((match) => match[1]);
+  const bareUrls = [...markdown.matchAll(/https?:\/\/[^\s<>"')\]]+/g)].map((match) => match[0]);
+  const unique = new Set<string>();
+
+  for (const rawUrl of [...markdownLinks, ...bareUrls]) {
+    try {
+      const normalized = new URL(rawUrl).toString();
+      unique.add(normalized);
+    } catch {
+      // Skip malformed URLs.
+    }
+  }
+
+  return [...unique].slice(0, 50);
+}
+
+function extractDescriptionFromMarkdown(markdown: string) {
+  const withoutLinks = markdown.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
+  const lines = withoutLinks
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.startsWith("#"))
+    .filter((line) => !line.startsWith("- "))
+    .filter((line) => !line.startsWith("* "))
+    .filter((line) => !line.startsWith(">"))
+    .filter((line) => !/^https?:\/\//.test(line));
+
+  const chunks: string[] = [];
+  let buffer = "";
+  for (const line of lines) {
+    const next = buffer ? `${buffer} ${line}` : line;
+    if (next.length > 320) {
+      if (buffer) {
+        chunks.push(buffer);
+      }
+      buffer = line;
+    } else {
+      buffer = next;
+    }
+    if (chunks.length >= 2) {
+      break;
+    }
+  }
+
+  if (buffer && chunks.length < 2) {
+    chunks.push(buffer);
+  }
+
+  return chunks.join("\n\n");
 }

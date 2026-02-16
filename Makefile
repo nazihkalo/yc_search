@@ -13,7 +13,7 @@ help:
 	@echo "  make doctor        - Verify Crawl4AI import in the venv"
 	@echo "  make dev           - Run Next.js dev server"
 	@echo "  make sync-all      - Run full ingest/scrape/embed pipeline"
-	@echo "  make compare       - Run Crawl4AI vs FireCrawl sample compare"
+	@echo "  make compare       - Run Crawl4AI sample crawl on random companies"
 	@echo "  make clean-python  - Remove local Python venv"
 
 setup: setup-node setup-python setup-env
@@ -50,7 +50,7 @@ sync-all:
 	npm run sync:all
 
 compare:
-	npm run test:crawl4ai:compare -- --limit=2
+	npm run test:crawl4ai:sample -- --limit=2
 
 clean-python:
 	rm -rf .venv

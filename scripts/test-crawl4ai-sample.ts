@@ -2,15 +2,12 @@ import pLimit from "p-limit";
 
 import { scrapeWebsiteMarkdown } from "../lib/crawl4ai";
 import { getDb, initializeDatabase } from "../lib/db";
-import { scrapeWebsiteMarkdown as scrapeWebsiteMarkdownFirecrawl } from "../lib/firecrawl";
 import { sha256 } from "../lib/hash";
 
 type CandidateRow = {
   id: number;
   name: string;
   website: string;
-  firecrawl_content_markdown: string | null;
-  firecrawl_scraped_at: string | null;
 };
 
 function parseLimitArg(defaultLimit = 2): number {
@@ -26,23 +23,17 @@ async function main() {
   initializeDatabase();
   const db = getDb();
   const requestedLimit = parseLimitArg(2);
+  const source = "crawl4ai";
 
-  let candidates = db
+  const candidates = db
     .prepare<[{ limit: number }], CandidateRow>(`
       SELECT
         c.id,
         c.name,
-        c.website,
-        s_firecrawl.content_markdown AS firecrawl_content_markdown,
-        s_firecrawl.scraped_at AS firecrawl_scraped_at
+        c.website
       FROM companies c
-      INNER JOIN website_snapshots s_firecrawl
-        ON s_firecrawl.company_id = c.id
-       AND s_firecrawl.source = 'firecrawl'
       WHERE c.website IS NOT NULL
         AND TRIM(c.website) != ''
-        AND s_firecrawl.content_markdown IS NOT NULL
-        AND TRIM(s_firecrawl.content_markdown) != ''
         AND (
           c.batch LIKE 'W26%'
           OR c.batch LIKE 'S26%'
@@ -52,30 +43,6 @@ async function main() {
       LIMIT @limit
     `)
     .all({ limit: requestedLimit });
-
-  if (candidates.length === 0) {
-    // Fallback path: sample random 2026 companies and bootstrap FireCrawl snapshot for comparison.
-    candidates = db
-      .prepare<[{ limit: number }], CandidateRow>(`
-        SELECT
-          c.id,
-          c.name,
-          c.website,
-          NULL AS firecrawl_content_markdown,
-          NULL AS firecrawl_scraped_at
-        FROM companies c
-        WHERE c.website IS NOT NULL
-          AND TRIM(c.website) != ''
-          AND (
-            c.batch LIKE 'W26%'
-            OR c.batch LIKE 'S26%'
-            OR c.batch LIKE '%2026%'
-          )
-        ORDER BY RANDOM()
-        LIMIT @limit
-      `)
-      .all({ limit: requestedLimit });
-  }
 
   if (candidates.length === 0) {
     console.log(
@@ -140,33 +107,17 @@ async function main() {
   const results = await Promise.all(
     candidates.map((candidate) =>
       limit(async () => {
-        const sourceCrawl4Ai = "crawl4ai";
-        const sourceFirecrawl = "firecrawl";
-
-        const firecrawlMarkdown =
-          candidate.firecrawl_content_markdown ?? (await scrapeWebsiteMarkdownFirecrawl(candidate.website));
-        const firecrawlHash = sha256(firecrawlMarkdown);
-        upsertSnapshot.run({
-          company_id: candidate.id,
-          source: sourceFirecrawl,
-          website_url: candidate.website,
-          content_markdown: firecrawlMarkdown,
-          content_hash: firecrawlHash,
-          error: null,
-        });
-
-        const crawl4aiMarkdown = await scrapeWebsiteMarkdown(candidate.website);
-        const crawl4aiHash = sha256(crawl4aiMarkdown);
-        const previousHash =
-          previousHashStatement.get({ id: candidate.id, source: sourceCrawl4Ai })?.content_hash ?? "";
-        const changed = previousHash !== crawl4aiHash;
+        const markdown = await scrapeWebsiteMarkdown(candidate.website);
+        const contentHash = sha256(markdown);
+        const previousHash = previousHashStatement.get({ id: candidate.id, source })?.content_hash ?? "";
+        const changed = previousHash !== contentHash;
 
         upsertSnapshot.run({
           company_id: candidate.id,
-          source: sourceCrawl4Ai,
+          source,
           website_url: candidate.website,
-          content_markdown: crawl4aiMarkdown,
-          content_hash: crawl4aiHash,
+          content_markdown: markdown,
+          content_hash: contentHash,
           error: null,
         });
 
@@ -179,9 +130,7 @@ async function main() {
           name: candidate.name,
           website: candidate.website,
           companyPage: `/companies/${candidate.id}`,
-          firecrawlScrapedAt: candidate.firecrawl_scraped_at,
-          firecrawlLength: firecrawlMarkdown.length,
-          crawl4aiLength: crawl4aiMarkdown.length,
+          crawl4aiLength: markdown.length,
           crawl4aiChanged: changed,
         };
       }),
@@ -193,7 +142,7 @@ async function main() {
       {
         requestedLimit,
         selected: candidates.length,
-        sources: ["firecrawl", "crawl4ai"],
+        source,
         results,
       },
       null,

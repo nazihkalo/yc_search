@@ -64,7 +64,7 @@ function migrateWebsiteSnapshotsToMultiSource(db: Database.Database) {
     )
     SELECT
       company_id,
-      COALESCE(NULLIF(source, ''), 'firecrawl') AS source,
+      COALESCE(NULLIF(source, ''), 'crawl4ai') AS source,
       website_url,
       content_markdown,
       content_hash,

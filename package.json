@@ -11,7 +11,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "sync:yc": "tsx scripts/sync-yc.ts",
     "sync:scrape": "tsx scripts/scrape-companies.ts",
-    "test:crawl4ai:compare": "tsx scripts/test-crawl4ai-compare.ts",
+    "test:crawl4ai:sample": "tsx scripts/test-crawl4ai-sample.ts",
     "sync:embed": "tsx scripts/embed-companies.ts",
     "sync:all": "npm run db:migrate && npm run sync:yc && npm run sync:scrape && npm run sync:embed"
   },

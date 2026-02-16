@@ -18,7 +18,6 @@ out/
 
 # Local app data
 data/
-.firecrawl/
 
 # Temp scaffolding
 nexttmp/

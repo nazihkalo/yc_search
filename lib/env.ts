@@ -29,14 +29,6 @@ export function getCrawl4AiPageTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 35_000;
 }
 
-export function getFirecrawlApiKey() {
-  const value = process.env.FIRECRAWL_API_KEY;
-  if (!value) {
-    throw new Error("FIRECRAWL_API_KEY is required");
-  }
-  return value;
-}
-
 export function getOpenAiApiKey() {
   const value = process.env.OPENAI_API_KEY;
   if (!value) {

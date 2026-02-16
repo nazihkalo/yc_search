@@ -94,12 +94,12 @@ npm run sync:scrape
 npm run sync:embed
 ```
 
-Targeted comparison run (random 2026 companies with existing FireCrawl snapshots):
+Targeted sample run (random 2026 companies):
 
 ```bash
-npm run test:crawl4ai:compare
+npm run test:crawl4ai:sample
 # optional:
-# npm run test:crawl4ai:compare -- --limit=2
+# npm run test:crawl4ai:sample -- --limit=2
 ```
 
 ### Incremental behavior
@@ -132,9 +132,10 @@ This keeps scraping and embedding one-time unless company data/content changes.
   - selected company (color 1)
   - similar companies (color 2)
   - all other companies (color 3)
-- Each company detail page also shows side-by-side website snapshots for:
-  - `crawl4ai`
-  - `firecrawl` (legacy baseline when available)
+- Each company detail page shows a Crawl4AI website snapshot section with:
+  - extracted description
+  - extracted URLs
+  - full markdown (expand/collapse)
 
 ## Notes
 

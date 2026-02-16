@@ -1,4 +1,4 @@
-export const SNAPSHOT_SOURCES = ["crawl4ai", "firecrawl"] as const;
+export const SNAPSHOT_SOURCES = ["crawl4ai"] as const;
 
 export type SnapshotSource = (typeof SNAPSHOT_SOURCES)[number];
 
