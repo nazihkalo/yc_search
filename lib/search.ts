@@ -1,5 +1,6 @@
 import { getDb, parseJsonArray } from "./db";
 import { EMBEDDING_MODEL, getOpenAiClient } from "./openai";
+import { extractDescriptionFromMarkdown, extractUrlsFromMarkdown } from "./snapshot-utils";
 import type { CompanyRecord } from "./types";
 
 export type SearchFilters = {
@@ -374,6 +375,200 @@ export async function getSemanticTopCompanyIds(params: SearchParams, limit = 100
     .sort((left, right) => right.score - left.score)
     .slice(0, limit)
     .map((row) => row.id);
+}
+
+type ChatContextRow = {
+  id: number;
+  name: string;
+  website: string | null;
+  url: string | null;
+  one_liner: string | null;
+  long_description: string | null;
+  website_url: string | null;
+  content_markdown: string | null;
+};
+
+export type CompanyChatCitation = {
+  id: number;
+  name: string;
+  companyPage: string;
+  whyRelevant: string;
+  urls: string[];
+};
+
+export type CompanyChatAnswer = {
+  answer: string;
+  citations: CompanyChatCitation[];
+};
+
+function buildSocialAndRelevantUrls(row: ChatContextRow) {
+  const baseUrls = [row.website, row.url, row.website_url].filter((value): value is string => Boolean(value));
+  const snapshotUrls = row.content_markdown ? extractUrlsFromMarkdown(row.content_markdown) : [];
+  const all = new Set<string>([...baseUrls, ...snapshotUrls]);
+  const ordered = [...all];
+
+  const socialDomains = [
+    "linkedin.com",
+    "x.com",
+    "twitter.com",
+    "github.com",
+    "facebook.com",
+    "instagram.com",
+    "youtube.com",
+    "discord.com",
+    "t.me",
+    "medium.com",
+  ];
+
+  const socials = ordered.filter((candidate) => socialDomains.some((domain) => candidate.includes(domain)));
+  const nonSocial = ordered.filter((candidate) => !socials.includes(candidate));
+  return [...socials, ...nonSocial].slice(0, 12);
+}
+
+function stripFence(value: string) {
+  return value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+}
+
+export async function answerCompanyQuestion(
+  question: string,
+  filters: SearchFilters,
+  topK = 8,
+): Promise<CompanyChatAnswer> {
+  const cleanQuestion = question.trim();
+  if (!cleanQuestion) {
+    return { answer: "", citations: [] };
+  }
+
+  const db = getDb();
+  const semantic = await semanticSearch({
+    query: cleanQuestion,
+    page: 1,
+    pageSize: Math.min(20, Math.max(1, topK)),
+    sort: "relevance",
+    filters,
+  });
+
+  if (semantic.results.length === 0) {
+    return {
+      answer: "No matching companies were found for that question with the current filters.",
+      citations: [],
+    };
+  }
+
+  const ids = semantic.results.map((item) => item.id);
+  const placeholders = ids.map((_, index) => `@id_${index}`);
+  const idParams: Record<string, number> = {};
+  ids.forEach((id, index) => {
+    idParams[`id_${index}`] = id;
+  });
+
+  const rows = db
+    .prepare<[{ [key: string]: number }], ChatContextRow>(`
+      SELECT
+        c.id,
+        c.name,
+        c.website,
+        c.url,
+        c.one_liner,
+        c.long_description,
+        s.website_url,
+        s.content_markdown
+      FROM companies c
+      LEFT JOIN website_snapshots s
+        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      WHERE c.id IN (${placeholders.join(", ")})
+    `)
+    .all(idParams);
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const orderedRows = ids.map((id) => byId.get(id)).filter((row): row is ChatContextRow => Boolean(row));
+
+  const context = orderedRows.map((row) => {
+    const descriptionFromSnapshot = row.content_markdown
+      ? extractDescriptionFromMarkdown(row.content_markdown)
+      : "";
+    const mergedDescription = [row.one_liner, row.long_description, descriptionFromSnapshot]
+      .filter(Boolean)
+      .join(" | ")
+      .slice(0, 1800);
+    const urls = buildSocialAndRelevantUrls(row);
+
+    return {
+      id: row.id,
+      name: row.name,
+      companyPage: `/companies/${row.id}`,
+      description: mergedDescription,
+      urls,
+    };
+  });
+
+  const openai = getOpenAiClient();
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You answer questions about YC companies using provided context only.",
+          "Be concise and concrete.",
+          "Return strict JSON with shape:",
+          `{"answer":"...","citations":[{"id":123,"name":"...","companyPage":"/companies/123","whyRelevant":"...","urls":["..."]}]}`,
+          "Each citation must reference a company from the context.",
+          "Prefer URLs that are social profiles or primary product/company links.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: JSON.stringify(
+          {
+            question: cleanQuestion,
+            companies: context,
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+    temperature: 0.2,
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const parsed = JSON.parse(stripFence(raw)) as Partial<CompanyChatAnswer>;
+  const citations = Array.isArray(parsed.citations) ? parsed.citations : [];
+  const contextById = new Map(context.map((item) => [item.id, item]));
+
+  const normalizedCitations = citations
+    .filter((item): item is CompanyChatCitation => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+      return (
+        typeof item.id === "number" &&
+        typeof item.name === "string" &&
+        typeof item.companyPage === "string" &&
+        typeof item.whyRelevant === "string" &&
+        Array.isArray(item.urls)
+      );
+    })
+    .filter((item) => contextById.has(item.id))
+    .map((item) => ({
+      ...item,
+      urls: item.urls.filter((value): value is string => typeof value === "string").slice(0, 8),
+    }));
+
+  const fallbackCitations: CompanyChatCitation[] = context.slice(0, 3).map((item) => ({
+    id: item.id,
+    name: item.name,
+    companyPage: item.companyPage,
+    whyRelevant: "Semantically relevant to your question and backed by Crawl4AI snapshot content.",
+    urls: item.urls.slice(0, 8),
+  }));
+
+  return {
+    answer: typeof parsed.answer === "string" ? parsed.answer : "",
+    citations: normalizedCitations.length > 0 ? normalizedCitations : fallbackCitations,
+  };
 }
 
 export function getFacets() {

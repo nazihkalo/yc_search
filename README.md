@@ -94,6 +94,21 @@ npm run sync:scrape
 npm run sync:embed
 ```
 
+Scrape all companies in one large pass (Crawl4AI):
+
+```bash
+npm run sync:scrape -- --limit=20000
+```
+
+Or explicit full refresh flow:
+
+```bash
+npm run db:migrate
+npm run sync:yc
+npm run sync:scrape -- --limit=20000
+npm run sync:embed -- --limit=20000
+```
+
 Targeted sample run (random 2026 companies):
 
 ```bash
@@ -115,6 +130,7 @@ This keeps scraping and embedding one-time unless company data/content changes.
 - `GET /api/facets` -> available tags, industries, years, stages, regions
 - `GET /api/search` -> keyword + faceted search
 - `GET /api/semantic-search` -> semantic search over precomputed embeddings
+- `POST /api/chat` -> chat QA over semantic company retrieval + Crawl4AI snapshot context
 - `GET /api/analytics` -> filtered batch chart data, optional stacked category series
 - `GET /api/companies/:id/embedding-map` -> PCA-based 2D embedding map for selected/similar/other company clusters
 - `POST /api/sync` -> runs `sync:all` (optional token auth via `Authorization: Bearer <SYNC_TOKEN>`)
@@ -136,6 +152,10 @@ This keeps scraping and embedding one-time unless company data/content changes.
   - extracted description
   - extracted URLs
   - full markdown (expand/collapse)
+- Search dashboard includes an **Ask YC Chat** panel:
+  - asks natural-language questions over semantic company retrieval
+  - uses YC metadata plus Crawl4AI snapshot content
+  - returns answer text with cited company links and extracted URLs/socials
 
 ## Notes
 

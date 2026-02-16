@@ -66,6 +66,19 @@ type AnalyticsResponse = {
   rows: Array<Record<string, string | number | null>>;
 };
 
+type ChatCitation = {
+  id: number;
+  name: string;
+  companyPage: string;
+  whyRelevant: string;
+  urls: string[];
+};
+
+type ChatResponse = {
+  answer: string;
+  citations: ChatCitation[];
+};
+
 const SERIES_COLORS = [
   "#5B8FF9",
   "#61C9A8",
@@ -155,6 +168,10 @@ export function SearchDashboard() {
   });
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
+  const [chatQuestion, setChatQuestion] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatResponse, setChatResponse] = useState<ChatResponse | null>(null);
 
   useEffect(() => {
     fetch("/api/facets")
@@ -334,6 +351,49 @@ export function SearchDashboard() {
     }
     if (analyticsColorBy === "industries") {
       addOrToggleIndustry(seriesKey);
+    }
+  }
+
+  async function askDatasetQuestion() {
+    const question = chatQuestion.trim();
+    if (!question) {
+      return;
+    }
+
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question,
+          topK: 8,
+          filters: {
+            tags,
+            industries,
+            batches,
+            years,
+            stages,
+            regions,
+            isHiring,
+            nonprofit,
+            topCompany,
+          },
+        }),
+      });
+      const payload = (await response.json()) as ChatResponse & { error?: string };
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error ?? "Failed to answer question");
+      }
+      setChatResponse(payload);
+    } catch (chatRequestError) {
+      const message = chatRequestError instanceof Error ? chatRequestError.message : "Failed to answer question";
+      setChatError(message);
+    } finally {
+      setChatLoading(false);
     }
   }
 
@@ -603,6 +663,93 @@ export function SearchDashboard() {
               className="w-full rounded-xl border border-zinc-300 px-4 py-4 text-base shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
             />
           </div>
+
+          <section className="rounded-xl border border-zinc-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-900">Ask YC Chat</h2>
+                <p className="text-xs text-zinc-500">
+                  Answers use company metadata + Crawl4AI snapshot content within your active filters.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                value={chatQuestion}
+                onChange={(event) => setChatQuestion(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void askDatasetQuestion();
+                  }
+                }}
+                placeholder='e.g. "What does this company do and what are its social links?"'
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              />
+              <button
+                type="button"
+                onClick={() => void askDatasetQuestion()}
+                disabled={chatLoading || !chatQuestion.trim()}
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {chatLoading ? "Thinking..." : "Ask"}
+              </button>
+            </div>
+
+            {chatError ? (
+              <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {chatError}
+              </p>
+            ) : null}
+
+            {chatResponse?.answer ? (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Answer</h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-zinc-800">
+                    {chatResponse.answer}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Sources</h3>
+                  <div className="mt-2 space-y-2">
+                    {chatResponse.citations.map((citation) => (
+                      <article key={`chat-citation-${citation.id}`} className="rounded-lg border border-zinc-200 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(`${citation.companyPage}?returnTo=${encodeURIComponent(returnToPath)}`)
+                            }
+                            className="text-left text-sm font-medium text-zinc-900 underline"
+                          >
+                            {citation.name}
+                          </button>
+                        </div>
+                        <p className="mt-1 text-sm text-zinc-600">{citation.whyRelevant}</p>
+                        {citation.urls.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {citation.urls.map((url) => (
+                              <a
+                                key={`${citation.id}-${url}`}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 underline"
+                              >
+                                {url}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
 
           <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4">
             <div>

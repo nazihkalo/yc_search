@@ -2,7 +2,7 @@ SHELL := /bin/bash
 UV ?= uv
 PYTHON_BIN := .venv/bin/python
 
-.PHONY: help setup setup-node setup-python setup-env doctor dev sync-all compare clean-python
+.PHONY: help setup setup-node setup-python setup-env doctor dev sync-all scrape-all compare clean-python
 
 help:
 	@echo "Targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make doctor        - Verify Crawl4AI import in the venv"
 	@echo "  make dev           - Run Next.js dev server"
 	@echo "  make sync-all      - Run full ingest/scrape/embed pipeline"
+	@echo "  make scrape-all    - Run large Crawl4AI scrape pass"
 	@echo "  make compare       - Run Crawl4AI sample crawl on random companies"
 	@echo "  make clean-python  - Remove local Python venv"
 
@@ -48,6 +49,9 @@ dev:
 
 sync-all:
 	npm run sync:all
+
+scrape-all:
+	npm run sync:scrape -- --limit=20000
 
 compare:
 	npm run test:crawl4ai:sample -- --limit=2
