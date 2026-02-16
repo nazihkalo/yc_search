@@ -162,3 +162,29 @@ This keeps scraping and embedding one-time unless company data/content changes.
 - Semantic search requires `OPENAI_API_KEY`.
 - Crawl4AI requires a working Python env where `crawl4ai` is installed.
 - SQLite lives in `./data/yc_search.sqlite` by default.
+
+## Railway deployment
+
+This repo is configured for Railway via `Dockerfile` + `railway.json`.
+
+Required Railway setup:
+
+1. Add a **Volume** mounted at `/data`
+2. Set env vars:
+   - `OPENAI_API_KEY=...`
+   - `DATABASE_PATH=/data/yc_search.sqlite`
+   - `CRAWL4AI_PAGE_TIMEOUT_MS=35000` (optional)
+3. Deploy the web service
+
+App boot command runs DB migration automatically:
+
+- `npm run db:migrate && npm run start`
+
+After web is healthy, add a second Railway service (or cron job) from the same repo for background sync:
+
+- command: `npm run sync:all`
+
+If you split jobs:
+
+- scrape worker: `npm run sync:scrape -- --limit=20000`
+- embed worker: `npm run sync:embed -- --limit=20000`

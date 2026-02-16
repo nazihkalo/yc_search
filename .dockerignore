@@ -1,0 +1,10 @@
+node_modules
+.next
+.venv
+data
+.env
+.env.local
+*.log
+.git
+.cursor
+.agents
