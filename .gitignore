@@ -21,3 +21,4 @@ data/
 
 # Temp scaffolding
 nexttmp/
+.envrc
