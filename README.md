@@ -1,5 +1,9 @@
 # YC Search
 
+Live app: [ycsearch-production.up.railway.app](https://ycsearch-production.up.railway.app)
+
+Demo video: [2x speed walkthrough](public/ycsearch-demo-2x.mp4)
+
 A full Next.js app for:
 
 - ingesting YC company data from `yc-oss/api`
