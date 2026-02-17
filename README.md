@@ -2,7 +2,9 @@
 
 Live app: [ycsearch-production.up.railway.app](https://ycsearch-production.up.railway.app)
 
-Demo video: [2x speed walkthrough](public/ycsearch-demo-2x.mp4)
+Demo video: 
+
+https://github.com/user-attachments/assets/74e43705-ef9a-41b7-a7db-4c82f4bf8c43 
 
 A full Next.js app for:
 
