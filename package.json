@@ -18,14 +18,22 @@
     "sync:all": "npm run db:migrate && npm run sync:incremental"
   },
   "dependencies": {
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "dotenv": "^17.2.4",
+    "lucide-react": "^0.577.0",
     "next": "16.1.6",
+    "next-themes": "^0.4.6",
     "openai": "^6.21.0",
     "p-limit": "^7.3.0",
     "pg": "^8.20.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",
+    "tailwind-merge": "^3.5.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

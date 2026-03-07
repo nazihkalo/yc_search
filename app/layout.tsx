@@ -1,9 +1,22 @@
 import type { Metadata } from "next";
+import { Manrope, JetBrains_Mono } from "next/font/google";
+
+import { ThemeProvider } from "../components/providers/theme-provider";
 import "./globals.css";
+
+const sans = Manrope({
+  subsets: ["latin"],
+  variable: "--font-ui-sans",
+});
+
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-ui-mono",
+});
 
 export const metadata: Metadata = {
   title: "YC Search",
-  description: "Search and semantically explore Y Combinator companies",
+  description: "Modern semantic search, analytics, and Crawl4AI context for Y Combinator companies.",
 };
 
 export default function RootLayout({
@@ -12,9 +25,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">
-        {children}
+    <html lang="en" suppressHydrationWarning className="dark">
+      <body className={`${sans.variable} ${mono.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CartesianGrid, Legend, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+
 type Point = {
   id: number;
   name: string;
@@ -19,8 +21,8 @@ type EmbeddingMapResponse = {
 };
 
 const GROUP_COLORS = {
-  selected: "#2563eb",
-  similar: "#14b8a6",
+  selected: "var(--chart-1)",
+  similar: "var(--chart-2)",
 } as const;
 
 export function CompanyEmbeddingMap({ companyId }: { companyId: number }) {
@@ -53,48 +55,57 @@ export function CompanyEmbeddingMap({ companyId }: { companyId: number }) {
   }, [data?.points]);
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-5">
-      <h2 className="text-lg font-semibold">Embedding map (2D)</h2>
-      <p className="mt-1 text-sm text-zinc-500">
-        PCA projection of the selected company and top 100 most similar companies. Click points to open company pages.
-      </p>
-
-      {error ? (
-        <p className="mt-3 text-sm text-red-600">{error}</p>
-      ) : (
-        <div className="mt-4 h-[420px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 12, right: 12, bottom: 12, left: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" dataKey="x" name="PC1" tick={false} axisLine={false} />
-              <YAxis type="number" dataKey="y" name="PC2" tick={false} axisLine={false} />
-              <Tooltip
-                cursor={{ strokeDasharray: "4 4" }}
-                formatter={(_, __, item) => {
-                  const payload = item?.payload as Point | undefined;
-                  return payload ? [payload.group, payload.name] : ["", ""];
-                }}
-                labelFormatter={() => ""}
-              />
-              <Legend />
-              <Scatter
-                name="Similar companies"
-                data={grouped.similar}
-                fill={GROUP_COLORS.similar}
-                onClick={(point: Point) => router.push(`/companies/${point.id}`)}
-                shape="circle"
-              />
-              <Scatter
-                name="Selected company"
-                data={grouped.selected}
-                fill={GROUP_COLORS.selected}
-                onClick={(point: Point) => router.push(`/companies/${point.id}`)}
-                shape="star"
-              />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </section>
+    <Card className="border-border/70 bg-card/90">
+      <CardHeader>
+        <CardTitle>Embedding map</CardTitle>
+        <CardDescription>
+          PCA projection of the selected company and the top 100 similar companies. Click points to open another company.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>
+        ) : (
+          <div className="h-[420px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 12, right: 12, bottom: 12, left: 12 }}>
+                <CartesianGrid stroke="color-mix(in oklch, var(--border) 90%, transparent)" />
+                <XAxis type="number" dataKey="x" name="PC1" tick={false} axisLine={false} />
+                <YAxis type="number" dataKey="y" name="PC2" tick={false} axisLine={false} />
+                <Tooltip
+                  cursor={{ strokeDasharray: "4 4" }}
+                  contentStyle={{
+                    borderRadius: 16,
+                    border: "1px solid color-mix(in oklch, var(--border) 80%, transparent)",
+                    background: "color-mix(in oklch, var(--card) 96%, transparent)",
+                    color: "var(--foreground)",
+                  }}
+                  formatter={(_, __, item) => {
+                    const payload = item?.payload as Point | undefined;
+                    return payload ? [payload.group, payload.name] : ["", ""];
+                  }}
+                  labelFormatter={() => ""}
+                />
+                <Legend />
+                <Scatter
+                  name="Similar companies"
+                  data={grouped.similar}
+                  fill={GROUP_COLORS.similar}
+                  onClick={(point: Point) => router.push(`/companies/${point.id}`)}
+                  shape="circle"
+                />
+                <Scatter
+                  name="Selected company"
+                  data={grouped.selected}
+                  fill={GROUP_COLORS.selected}
+                  onClick={(point: Point) => router.push(`/companies/${point.id}`)}
+                  shape="star"
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

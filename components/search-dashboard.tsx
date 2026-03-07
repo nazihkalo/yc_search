@@ -1,103 +1,51 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  Brain,
+  LayoutGrid,
+  RefreshCcw,
+  Search,
+  SlidersHorizontal,
+  TableProperties,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-type FacetItem<T extends string | number = string> = {
-  value: T;
-  count: number;
-};
+import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
+import { ResultsCardGrid } from "./dashboard/results-card-grid";
+import { ResultsTable } from "./dashboard/results-table";
+import type {
+  AnalyticsResponse,
+  ChatResponse,
+  FacetItem,
+  FacetsPayload,
+  SearchResponse,
+} from "./dashboard/types";
+import { ThemeToggle } from "./theme-toggle";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Switch } from "./ui/switch";
+import { cn } from "../lib/utils";
 
-type FacetsPayload = {
-  tags: FacetItem<string>[];
-  industries: FacetItem<string>[];
-  regions: FacetItem<string>[];
-  stages: FacetItem<string>[];
-  years: FacetItem<number>[];
-};
+type SearchMode = "keyword" | "semantic";
+type AnalyticsColorBy = "none" | "tags" | "industries";
+type ResultsView = "cards" | "table";
+type SortOption = "relevance" | "newest" | "team_size" | "name";
+type DashboardTab = "results" | "analytics";
 
-type CompanyResult = {
-  id: number;
-  name: string;
-  slug: string | null;
-  website: string | null;
-  one_liner: string | null;
-  long_description: string | null;
-  batch: string | null;
-  stage: string | null;
-  industry: string | null;
-  all_locations: string | null;
-  launched_at: number | null;
-  launched_year: number | null;
-  team_size: number | null;
-  is_hiring: boolean;
-  nonprofit: boolean;
-  top_company: boolean;
-  tags: string[];
-  industries: string[];
-  regions: string[];
-  url: string | null;
-  small_logo_thumb_url: string | null;
-  status: string | null;
-  score?: number;
-};
-
-type SearchResponse = {
-  total: number;
-  page: number;
-  pageSize: number;
-  results: CompanyResult[];
-};
-
-type AnalyticsResponse = {
-  colorBy: "none" | "tags" | "industries";
-  totalCompanies: number;
-  series: string[];
-  rows: Array<Record<string, string | number | null>>;
-};
-
-type ChatCitation = {
-  id: number;
-  name: string;
-  companyPage: string;
-  whyRelevant: string;
-  urls: string[];
-};
-
-type ChatResponse = {
-  answer: string;
-  citations: ChatCitation[];
-};
-
-const SERIES_COLORS = [
-  "#5B8FF9",
-  "#61C9A8",
-  "#7E92FF",
-  "#F3B972",
-  "#7CB0A8",
-  "#A993F7",
-  "#F29C9B",
-  "#84BDEB",
-  "#BCC4FF",
-  "#6FAFA3",
-  "#F2A97A",
-  "#9F8CF3",
+const QUERY_EXAMPLES = [
+  "B2B SaaS companies in healthcare",
+  "Find YC companies working on climate tech",
+  "AI developer tools hiring in Europe",
+  "Top fintech infrastructure startups",
 ];
 
 function parseCsv(value: string | null) {
   if (!value) {
     return [];
   }
+
   return value
     .split(",")
     .map((item) => item.trim())
@@ -118,31 +66,15 @@ function pickTopFacets<T extends string | number>(items: FacetItem<T>[], count =
   return items.slice(0, count);
 }
 
-function formatBatchTickLabel(batch: string) {
-  const compactMatch = batch.match(/^([WSF])(\d{2})$/i);
-  if (compactMatch) {
-    return `${compactMatch[1].toUpperCase()}${compactMatch[2]}`;
-  }
-
-  const namedMatch = batch.match(/^(Winter|Spring|Summer|Fall)\s+(\d{4})$/i);
-  if (namedMatch) {
-    const season = namedMatch[1].toLowerCase();
-    const seasonShort =
-      season === "winter" ? "W" : season === "spring" ? "Sp" : season === "summer" ? "S" : "F";
-    return `${seasonShort}${namedMatch[2].slice(2)}`;
-  }
-
-  return batch.length > 7 ? batch.slice(0, 7) : batch;
-}
-
 export function SearchDashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [mode, setMode] = useState<"keyword" | "semantic">(
-    (searchParams.get("mode") as "keyword" | "semantic") ?? "keyword",
-  );
+  const [activeTab, setActiveTab] = useState<DashboardTab>((searchParams.get("tab") as DashboardTab) ?? "results");
+  const [mode, setMode] = useState<SearchMode>((searchParams.get("mode") as SearchMode) ?? "keyword");
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
+  const [sort, setSort] = useState<SortOption>((searchParams.get("sort") as SortOption) ?? "relevance");
+  const [view, setView] = useState<ResultsView>((searchParams.get("view") as ResultsView) ?? "table");
   const [tags, setTags] = useState<string[]>(parseCsv(searchParams.get("tags")));
   const [industries, setIndustries] = useState<string[]>(parseCsv(searchParams.get("industries")));
   const [batches, setBatches] = useState<string[]>(parseCsv(searchParams.get("batches")));
@@ -153,9 +85,12 @@ export function SearchDashboard() {
   const [nonprofit, setNonprofit] = useState(searchParams.get("nonprofit") === "1");
   const [topCompany, setTopCompany] = useState(searchParams.get("topCompany") === "1");
   const [page, setPage] = useState(Number(searchParams.get("page") ?? 1));
-  const [analyticsColorBy, setAnalyticsColorBy] = useState<"none" | "tags" | "industries">(
-    (searchParams.get("colorBy") as "none" | "tags" | "industries") ?? "none",
+  const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
+    (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
@@ -172,20 +107,43 @@ export function SearchDashboard() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatResponse, setChatResponse] = useState<ChatResponse | null>(null);
+  const [facetsLoading, setFacetsLoading] = useState(true);
+  const [resultsLoading, setResultsLoading] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   useEffect(() => {
+    setFacetsLoading(true);
     fetch("/api/facets")
       .then((response) => response.json())
-      .then((payload) => setFacets(payload))
+      .then((payload) => {
+        setFacets(payload);
+        setError(null);
+      })
       .catch((fetchError) => {
         const message = fetchError instanceof Error ? fetchError.message : "Could not load facets";
         setError(message);
-      });
+      })
+      .finally(() => setFacetsLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (query.trim()) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setPlaceholderIndex((current) => (current + 1) % QUERY_EXAMPLES.length);
+    }, 2400);
+
+    return () => window.clearInterval(interval);
+  }, [query]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
+    params.set("tab", activeTab);
     params.set("mode", mode);
+    params.set("sort", sort);
+    params.set("view", view);
     params.set("colorBy", analyticsColorBy);
     if (query.trim()) {
       params.set("q", query.trim());
@@ -221,24 +179,29 @@ export function SearchDashboard() {
     params.set("pageSize", "20");
     return params.toString();
   }, [
-    mode,
-    query,
-    tags,
-    industries,
-    batches,
-    years,
-    regions,
-    stages,
-    isHiring,
-    nonprofit,
-    topCompany,
-    page,
+    activeTab,
     analyticsColorBy,
+    batches,
+    industries,
+    isHiring,
+    mode,
+    nonprofit,
+    page,
+    query,
+    regions,
+    sort,
+    stages,
+    tags,
+    topCompany,
+    view,
+    years,
   ]);
+
   const returnToPath = useMemo(() => `/?${queryString}`, [queryString]);
 
   useEffect(() => {
     const endpoint = mode === "semantic" ? "/api/semantic-search" : "/api/search";
+    setResultsLoading(true);
 
     fetch(`${endpoint}?${queryString}`)
       .then((response) => response.json())
@@ -252,15 +215,21 @@ export function SearchDashboard() {
       .catch((fetchError) => {
         const message = fetchError instanceof Error ? fetchError.message : "Search failed";
         setError(message);
-      });
+      })
+      .finally(() => setResultsLoading(false));
 
-    router.replace(`/?${queryString}`);
-  }, [queryString, mode, router]);
+    router.replace(`/?${queryString}`, { scroll: false });
+  }, [mode, queryString, router]);
 
   useEffect(() => {
+    if (activeTab !== "analytics") {
+      return;
+    }
+
     const params = new URLSearchParams(queryString);
     params.set("colorBy", analyticsColorBy);
     params.set("topN", "8");
+    setAnalyticsLoading(true);
 
     fetch(`/api/analytics?${params.toString()}`)
       .then((response) => response.json())
@@ -274,8 +243,9 @@ export function SearchDashboard() {
       .catch((fetchError) => {
         const message = fetchError instanceof Error ? fetchError.message : "Analytics request failed";
         setAnalyticsError(message);
-      });
-  }, [analyticsColorBy, queryString]);
+      })
+      .finally(() => setAnalyticsLoading(false));
+  }, [activeTab, analyticsColorBy, queryString]);
 
   function toggleArrayValue<T extends string | number>(
     value: T,
@@ -327,6 +297,7 @@ export function SearchDashboard() {
       addOrToggleTag(series);
       return;
     }
+
     if (analyticsColorBy === "industries") {
       addOrToggleIndustry(series);
     }
@@ -349,6 +320,7 @@ export function SearchDashboard() {
       addOrToggleTag(seriesKey);
       return;
     }
+
     if (analyticsColorBy === "industries") {
       addOrToggleIndustry(seriesKey);
     }
@@ -397,505 +369,608 @@ export function SearchDashboard() {
     }
   }
 
+  const totalPages = Math.max(1, Math.ceil(results.total / results.pageSize));
+  const activeFilters = [
+    ...tags.map((value) => ({ key: `tag-${value}`, label: value, onRemove: () => addOrToggleTag(value) })),
+    ...industries.map((value) => ({
+      key: `industry-${value}`,
+      label: value,
+      onRemove: () => addOrToggleIndustry(value),
+    })),
+    ...batches.map((value) => ({ key: `batch-${value}`, label: value, onRemove: () => addOrToggleBatch(value) })),
+    ...years.map((value) => ({
+      key: `year-${value}`,
+      label: String(value),
+      onRemove: () => {
+        setPage(1);
+        toggleArrayValue(value, years, setYears);
+      },
+    })),
+    ...stages.map((value) => ({
+      key: `stage-${value}`,
+      label: value,
+      onRemove: () => {
+        setPage(1);
+        toggleArrayValue(value, stages, setStages);
+      },
+    })),
+    ...regions.map((value) => ({
+      key: `region-${value}`,
+      label: value,
+      onRemove: () => {
+        setPage(1);
+        toggleArrayValue(value, regions, setRegions);
+      },
+    })),
+    ...(isHiring
+      ? [
+          {
+            key: "hiring",
+            label: "Hiring only",
+            onRemove: () => {
+              setPage(1);
+              setIsHiring(false);
+            },
+          },
+        ]
+      : []),
+    ...(nonprofit
+      ? [
+          {
+            key: "nonprofit",
+            label: "Nonprofit only",
+            onRemove: () => {
+              setPage(1);
+              setNonprofit(false);
+            },
+          },
+        ]
+      : []),
+    ...(topCompany
+      ? [
+          {
+            key: "top-company",
+            label: "Top companies",
+            onRemove: () => {
+              setPage(1);
+              setTopCompany(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 p-6">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">YC Search</h1>
-        <p className="text-sm text-zinc-600">
-          Faceted + semantic search over YC companies and scraped website content.
-        </p>
-      </header>
+    <div className="min-h-screen w-full px-4 py-6 sm:px-6 lg:px-8">
+      <div className="space-y-6">
+        <header className="flex items-center justify-between gap-4">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">YC Search</h1>
+          <ThemeToggle />
+        </header>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <aside className="space-y-4 rounded-xl border border-zinc-200 bg-white p-4">
-          <button
-            type="button"
-            onClick={resetAllFilters}
-            className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-left text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-100"
-          >
-            Reset filters
-          </button>
-
-          <div className="grid grid-cols-1 gap-2 text-sm">
-            <FilterToggleRow
-              label="Hiring only"
-              checked={isHiring}
-              onToggle={() => {
-                setPage(1);
-                setIsHiring(!isHiring);
-              }}
-            />
-            <FilterToggleRow
-              label="Nonprofit only"
-              checked={nonprofit}
-              onToggle={() => {
-                setPage(1);
-                setNonprofit(!nonprofit);
-              }}
-            />
-            <FilterToggleRow
-              label="Top companies only"
-              checked={topCompany}
-              onToggle={() => {
-                setPage(1);
-                setTopCompany(!topCompany);
-              }}
-            />
-          </div>
-
-          {facets ? (
-            <>
-              <FacetChecklist
-                title="Tags"
-                items={pickTopFacets(facets.tags, 24)}
-                selected={tags}
-                onToggle={(value) => {
-                  setPage(1);
-                  toggleArrayValue(value, tags, setTags);
-                }}
-              />
-              <FacetChecklist
-                title="Industries"
-                items={pickTopFacets(facets.industries, 20)}
-                selected={industries}
-                onToggle={(value) => {
-                  setPage(1);
-                  toggleArrayValue(value, industries, setIndustries);
-                }}
-              />
-              <FacetChecklist
-                title="Years"
-                items={pickTopFacets(facets.years, 20)}
-                selected={years}
-                onToggle={(value) => {
-                  setPage(1);
-                  toggleArrayValue(Number(value), years, setYears);
-                }}
-              />
-              <FacetChecklist
-                title="Stages"
-                items={pickTopFacets(facets.stages, 10)}
-                selected={stages}
-                onToggle={(value) => {
-                  setPage(1);
-                  toggleArrayValue(value, stages, setStages);
-                }}
-              />
-              <FacetChecklist
-                title="Regions"
-                items={pickTopFacets(facets.regions, 12)}
-                selected={regions}
-                onToggle={(value) => {
-                  setPage(1);
-                  toggleArrayValue(value, regions, setRegions);
-                }}
-              />
-            </>
-          ) : null}
-        </aside>
-
-        <main className="space-y-4">
-          <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4">
-            <div>
-              <p className="text-sm text-zinc-500">
-                {analytics?.totalCompanies.toLocaleString() ?? 0} companies in current selection
-              </p>
-              <p className="text-xs text-zinc-400">
-                Click legend colors and bars to drill down
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-600">Color by</span>
-              <div className="inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
-                {[
-                  { value: "none", label: "None" },
-                  { value: "tags", label: "Tags" },
-                  { value: "industries", label: "Industries" },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() =>
-                      setAnalyticsColorBy(option.value as "none" | "tags" | "industries")
-                    }
-                    className={`rounded-md px-3 py-1 text-sm transition ${
-                      analyticsColorBy === option.value
-                        ? "bg-white text-zinc-900 shadow-sm"
-                        : "text-zinc-500 hover:text-zinc-700"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {batches.length > 0 ? (
-            <div className="rounded-xl border border-zinc-200 bg-white p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs font-medium text-zinc-600">Batch drilldown</p>
-                <button
-                  type="button"
-                  onClick={() => {
+        <section className="space-y-4">
+          <div className="rounded-[28px] border border-border/70 bg-card/95 p-4 shadow-sm sm:p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => {
                     setPage(1);
-                    setBatches([]);
+                    setQuery(event.target.value);
                   }}
-                  className="text-xs text-zinc-500 underline"
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                  placeholder=""
+                  className="h-16 rounded-[22px] border-border/70 bg-background/70 pl-12 pr-4 text-base shadow-none"
+                />
+                {!query ? (
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute inset-y-0 left-12 right-4 flex items-center text-base text-muted-foreground/80 transition-opacity",
+                      searchFocused ? "opacity-100" : "opacity-90",
+                    )}
+                  >
+                    <span className="truncate">
+                      <span className="mr-2 text-muted-foreground/50">Try</span>
+                      {QUERY_EXAMPLES[placeholderIndex]}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedControl
+                  options={[
+                    { value: "keyword", label: "Keyword" },
+                    { value: "semantic", label: "Semantic" },
+                  ]}
+                  value={mode}
+                  onChange={(next) => {
+                    setPage(1);
+                    setMode(next as SearchMode);
+                  }}
+                />
+                <SegmentedControl
+                  options={[
+                    { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
+                    { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
+                  ]}
+                  value={view}
+                  onChange={(next) => setView(next as ResultsView)}
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedControl
+                  compact
+                  options={[
+                    { value: "results", label: "Results" },
+                    { value: "analytics", label: "Analytics" },
+                  ]}
+                  value={activeTab}
+                  onChange={(next) => setActiveTab(next as DashboardTab)}
+                />
+                <SegmentedControl
+                  compact
+                  options={[
+                    { value: "relevance", label: "Relevance" },
+                    { value: "newest", label: "Newest" },
+                    { value: "team_size", label: "Team" },
+                    { value: "name", label: "Name" },
+                  ]}
+                  value={sort}
+                  onChange={(next) => {
+                    setPage(1);
+                    setSort(next as SortOption);
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <CompactToggle
+                  label="Hiring"
+                  checked={isHiring}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setIsHiring(checked);
+                  }}
+                />
+                <CompactToggle
+                  label="Nonprofit"
+                  checked={nonprofit}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setNonprofit(checked);
+                  }}
+                />
+                <CompactToggle
+                  label="Top"
+                  checked={topCompany}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setTopCompany(checked);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAdvancedFilters((current) => !current)}
+                  className="rounded-full"
                 >
-                  Clear
+                  <SlidersHorizontal className="size-3.5" />
+                  Filters
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={resetAllFilters} className="rounded-full">
+                  <RefreshCcw className="size-3.5" />
+                  Reset
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {activeFilters.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {activeFilters.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={filter.onRemove}
+                  className="rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                >
+                  {filter.label} ×
                 </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {batches.map((batch) => (
-                  <button
-                    key={`batch-pill-${batch}`}
-                    type="button"
-                    onClick={() => addOrToggleBatch(batch)}
-                    className="rounded border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-800"
-                  >
-                    {batch}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           ) : null}
 
-          {analyticsError ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {analyticsError}
-            </div>
+          {showAdvancedFilters ? (
+            <Card className="border-border/70 bg-card/95">
+              <CardContent className="grid gap-5 p-4 md:grid-cols-2 xl:grid-cols-5">
+                <FacetChecklist
+                  title="Tags"
+                  items={pickTopFacets(facets?.tags ?? [], 20)}
+                  selected={tags}
+                  loading={facetsLoading}
+                  onToggle={(value) => {
+                    setPage(1);
+                    toggleArrayValue(value, tags, setTags);
+                  }}
+                />
+                <FacetChecklist
+                  title="Industries"
+                  items={pickTopFacets(facets?.industries ?? [], 16)}
+                  selected={industries}
+                  loading={facetsLoading}
+                  onToggle={(value) => {
+                    setPage(1);
+                    toggleArrayValue(value, industries, setIndustries);
+                  }}
+                />
+                <FacetChecklist
+                  title="Years"
+                  items={pickTopFacets(facets?.years ?? [], 16)}
+                  selected={years}
+                  loading={facetsLoading}
+                  onToggle={(value) => {
+                    setPage(1);
+                    toggleArrayValue(Number(value), years, setYears);
+                  }}
+                />
+                <FacetChecklist
+                  title="Stages"
+                  items={pickTopFacets(facets?.stages ?? [], 12)}
+                  selected={stages}
+                  loading={facetsLoading}
+                  onToggle={(value) => {
+                    setPage(1);
+                    toggleArrayValue(value, stages, setStages);
+                  }}
+                />
+                <FacetChecklist
+                  title="Regions"
+                  items={pickTopFacets(facets?.regions ?? [], 12)}
+                  selected={regions}
+                  loading={facetsLoading}
+                  onToggle={(value) => {
+                    setPage(1);
+                    toggleArrayValue(value, regions, setRegions);
+                  }}
+                />
+              </CardContent>
+            </Card>
           ) : null}
+        </section>
 
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
-            <div className="h-[450px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={analytics?.rows ?? []} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="batch"
-                    interval="preserveStartEnd"
-                    minTickGap={28}
-                    tickFormatter={formatBatchTickLabel}
-                    angle={-32}
-                    textAnchor="end"
-                    height={78}
-                    tickMargin={10}
-                  />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Legend
-                    onClick={(entry: { dataKey?: unknown; value?: string | number }) => {
-                      const dataKey =
-                        typeof entry.dataKey === "string" || typeof entry.dataKey === "number"
-                          ? entry.dataKey
-                          : undefined;
-                      handleLegendDrilldown(dataKey ?? entry.value);
-                    }}
-                    onMouseEnter={(entry: { dataKey?: unknown; value?: string | number }) => {
-                      const dataKey =
-                        typeof entry.dataKey === "string" || typeof entry.dataKey === "number"
-                          ? String(entry.dataKey)
-                          : typeof entry.value === "string" || typeof entry.value === "number"
-                            ? String(entry.value)
-                            : null;
-                      setHoveredSeries(dataKey && dataKey !== "total" ? dataKey : null);
-                    }}
-                    onMouseLeave={() => setHoveredSeries(null)}
-                  />
-                  {(analytics?.series ?? []).map((seriesKey, index) => (
-                    <Bar
-                      key={seriesKey}
-                      dataKey={seriesKey}
-                      stackId={analyticsColorBy === "none" ? undefined : "batch"}
-                      fill={SERIES_COLORS[index % SERIES_COLORS.length]}
-                      cursor="pointer"
-                      fillOpacity={hoveredSeries && hoveredSeries !== seriesKey ? 0.28 : 1}
-                      stroke={hoveredSeries === seriesKey ? "#334155" : undefined}
-                      strokeWidth={hoveredSeries === seriesKey ? 1.5 : 0}
-                      activeBar={{ stroke: "#0f172a", strokeWidth: 1.5, fillOpacity: 1 }}
-                      onMouseEnter={() => setHoveredSeries(seriesKey)}
-                      onMouseLeave={() => setHoveredSeries(null)}
-                      onClick={(payload) => handleBarDrilldown(seriesKey, payload)}
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
-            <div className="mb-3 flex justify-center">
-              <div className="inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
-                {[
-                  { value: "keyword", label: "Keyword" },
-                  { value: "semantic", label: "Semantic" },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      setPage(1);
-                      setMode(option.value as "keyword" | "semantic");
-                    }}
-                    className={`rounded-md px-3 py-1 text-sm transition ${
-                      mode === option.value
-                        ? "bg-white text-zinc-900 shadow-sm"
-                        : "text-zinc-500 hover:text-zinc-700"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <input
-              value={query}
-              onChange={(event) => {
-                setPage(1);
-                setQuery(event.target.value);
-              }}
-              placeholder={
-                mode === "semantic"
-                  ? "e.g. AI devtools in fintech hiring in Europe"
-                  : "e.g. analytics, developer tools, healthcare"
-              }
-              className="w-full rounded-xl border border-zinc-300 px-4 py-4 text-base shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
-            />
-          </div>
-
-          <section className="rounded-xl border border-zinc-200 bg-white p-4">
-            <div className="flex items-center justify-between gap-3">
+        {activeTab === "results" ? (
+          <section className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-base font-semibold text-zinc-900">Ask YC Chat</h2>
-                <p className="text-xs text-zinc-500">
-                  Answers use company metadata + Crawl4AI snapshot content within your active filters.
+                <p className="text-sm font-medium">{results.total.toLocaleString()} companies</p>
+                <p className="text-xs text-muted-foreground">
+                  {mode === "semantic" ? "Semantic" : "Keyword"} search, page {results.page} of {totalPages}
                 </p>
               </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <input
-                value={chatQuestion}
-                onChange={(event) => setChatQuestion(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void askDatasetQuestion();
-                  }
-                }}
-                placeholder='e.g. "What does this company do and what are its social links?"'
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              <PaginationControls
+                page={page}
+                total={results.total}
+                pageSize={results.pageSize}
+                onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
+                onNext={() => setPage((previous) => previous + 1)}
               />
-              <button
-                type="button"
-                onClick={() => void askDatasetQuestion()}
-                disabled={chatLoading || !chatQuestion.trim()}
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {chatLoading ? "Thinking..." : "Ask"}
-              </button>
             </div>
 
-            {chatError ? (
-              <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {chatError}
-              </p>
-            ) : null}
+            {error ? <ErrorBanner message={error} /> : null}
 
-            {chatResponse?.answer ? (
-              <div className="mt-4 space-y-4">
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Answer</h3>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-zinc-800">
-                    {chatResponse.answer}
-                  </p>
+            {resultsLoading ? (
+              <LoadingState label="Refreshing results..." />
+            ) : results.results.length === 0 ? (
+              <EmptyState />
+            ) : view === "cards" ? (
+              <ResultsCardGrid
+                results={results.results}
+                returnToPath={returnToPath}
+                selectedTags={tags}
+                selectedIndustries={industries}
+                onToggleTag={addOrToggleTag}
+                onToggleIndustry={addOrToggleIndustry}
+              />
+            ) : (
+              <ResultsTable
+                results={results.results}
+                returnToPath={returnToPath}
+                selectedTags={tags}
+                selectedIndustries={industries}
+                sort={sort}
+                onSortChange={(nextSort) => {
+                  setPage(1);
+                  setSort(nextSort);
+                }}
+                onToggleTag={addOrToggleTag}
+                onToggleIndustry={addOrToggleIndustry}
+              />
+            )}
+          </section>
+        ) : (
+          <section className="space-y-6">
+            <Card className="border-border/70 bg-card/95">
+              <CardHeader className="pb-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <CardTitle className="text-base">Batch analytics</CardTitle>
+                    <CardDescription>
+                      Charts live here so the main results view stays search-first and table-first.
+                    </CardDescription>
+                  </div>
+                  <SegmentedControl
+                    compact
+                    options={[
+                      { value: "none", label: "None" },
+                      { value: "tags", label: "Tags" },
+                      { value: "industries", label: "Industries" },
+                    ]}
+                    value={analyticsColorBy}
+                    onChange={(next) => setAnalyticsColorBy(next as AnalyticsColorBy)}
+                  />
                 </div>
-
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Sources</h3>
-                  <div className="mt-2 space-y-2">
-                    {chatResponse.citations.map((citation) => (
-                      <article key={`chat-citation-${citation.id}`} className="rounded-lg border border-zinc-200 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              router.push(`${citation.companyPage}?returnTo=${encodeURIComponent(returnToPath)}`)
-                            }
-                            className="text-left text-sm font-medium text-zinc-900 underline"
-                          >
-                            {citation.name}
-                          </button>
-                        </div>
-                        <p className="mt-1 text-sm text-zinc-600">{citation.whyRelevant}</p>
-                        {citation.urls.length > 0 ? (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {citation.urls.map((url) => (
-                              <a
-                                key={`${citation.id}-${url}`}
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 underline"
-                              >
-                                {url}
-                              </a>
-                            ))}
-                          </div>
-                        ) : null}
-                      </article>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {batches.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {batches.map((batch) => (
+                      <button
+                        key={`batch-pill-${batch}`}
+                        type="button"
+                        onClick={() => addOrToggleBatch(batch)}
+                        className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs text-primary transition hover:bg-primary/15"
+                      >
+                        {batch}
+                      </button>
                     ))}
                   </div>
+                ) : null}
+
+                {analyticsError ? (
+                  <ErrorBanner message={analyticsError} />
+                ) : analyticsLoading ? (
+                  <LoadingState label="Refreshing analytics..." />
+                ) : (
+                  <BatchAnalyticsChart
+                    analytics={analytics}
+                    analyticsColorBy={analyticsColorBy}
+                    hoveredSeries={hoveredSeries}
+                    onHoverSeries={setHoveredSeries}
+                    onLeaveSeries={() => setHoveredSeries(null)}
+                    onLegendDrilldown={handleLegendDrilldown}
+                    onBarDrilldown={handleBarDrilldown}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">Filtered results</p>
+                  <p className="text-xs text-muted-foreground">
+                    Keep chart drilldowns and table browsing in one secondary workspace.
+                  </p>
                 </div>
+                <PaginationControls
+                  page={page}
+                  total={results.total}
+                  pageSize={results.pageSize}
+                  onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
+                  onNext={() => setPage((previous) => previous + 1)}
+                />
               </div>
-            ) : null}
-          </section>
 
-          <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4">
-            <div>
-              <p className="text-sm text-zinc-500">
-                {`${results.total.toLocaleString()} results`}
-              </p>
-              <p className="text-xs text-zinc-400">
-                Mode: {mode === "semantic" ? "Semantic" : "Keyword"} | Page {results.page}
-              </p>
+              {resultsLoading ? (
+                <LoadingState label="Refreshing results..." />
+              ) : view === "cards" ? (
+                <ResultsCardGrid
+                  results={results.results}
+                  returnToPath={returnToPath}
+                  selectedTags={tags}
+                  selectedIndustries={industries}
+                  onToggleTag={addOrToggleTag}
+                  onToggleIndustry={addOrToggleIndustry}
+                />
+              ) : (
+                <ResultsTable
+                  results={results.results}
+                  returnToPath={returnToPath}
+                  selectedTags={tags}
+                  selectedIndustries={industries}
+                  sort={sort}
+                  onSortChange={(nextSort) => {
+                    setPage(1);
+                    setSort(nextSort);
+                  }}
+                  onToggleTag={addOrToggleTag}
+                  onToggleIndustry={addOrToggleIndustry}
+                />
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page <= 1}
-                className="rounded-md border border-zinc-300 px-3 py-1 text-sm disabled:opacity-40"
-                onClick={() => setPage((previous) => Math.max(1, previous - 1))}
-              >
-                Prev
-              </button>
-              <button
-                disabled={results.page * results.pageSize >= results.total}
-                className="rounded-md border border-zinc-300 px-3 py-1 text-sm disabled:opacity-40"
-                onClick={() => setPage((previous) => previous + 1)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
 
-          {error ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="grid gap-3">
-            {results.results.map((company) => (
-              <article key={company.id} className="rounded-xl border border-zinc-200 bg-white p-4">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() =>
-                        router.push(
-                          `/companies/${company.id}?returnTo=${encodeURIComponent(returnToPath)}`,
-                        )
+            <Card className="border-border/70 bg-card/95">
+              <CardHeader className="pb-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-2xl border border-primary/20 bg-primary/10 p-2 text-primary">
+                    <Brain className="size-4" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Ask YC Chat</CardTitle>
+                    <CardDescription>
+                      Secondary analysis workspace for questions grounded in your current filters.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col gap-3 lg:flex-row">
+                  <Input
+                    value={chatQuestion}
+                    onChange={(event) => setChatQuestion(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void askDatasetQuestion();
                       }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          router.push(
-                            `/companies/${company.id}?returnTo=${encodeURIComponent(returnToPath)}`,
-                          );
-                        }
-                      }}
-                      className="cursor-pointer"
-                    >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        {company.small_logo_thumb_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={company.small_logo_thumb_url}
-                            alt={`${company.name} logo`}
-                            className="h-8 w-8 rounded-sm border border-zinc-200 object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-zinc-200 bg-zinc-50 text-xs text-zinc-400">
-                            N/A
-                          </div>
-                        )}
-                        <div>
-                          <h2 className="text-lg font-semibold">
-                            {company.name}
-                          </h2>
-                          <p className="mt-1 text-sm text-zinc-600">
-                            {company.one_liner ?? "No one-liner available."}
-                          </p>
-                        </div>
+                    }}
+                    placeholder="Which companies here look strongest, and which links should I open first?"
+                    className="h-12 flex-1 rounded-2xl"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void askDatasetQuestion()}
+                    disabled={chatLoading || !chatQuestion.trim()}
+                    className="h-12 rounded-2xl px-5"
+                  >
+                    {chatLoading ? "Thinking..." : "Ask"}
+                  </Button>
+                </div>
+
+                {chatError ? <ErrorBanner message={chatError} /> : null}
+
+                {chatResponse?.answer ? (
+                  <div className="space-y-4 rounded-2xl border border-border/70 bg-background/50 p-4">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Answer</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7">{chatResponse.answer}</p>
+                    </div>
+
+                    {chatResponse.citations.length > 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Sources</p>
+                        {chatResponse.citations.map((citation) => (
+                          <article
+                            key={`chat-citation-${citation.id}`}
+                            className="rounded-2xl border border-border/70 bg-card/90 p-4"
+                          >
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  router.push(`${citation.companyPage}?returnTo=${encodeURIComponent(returnToPath)}`)
+                                }
+                                className="text-left text-sm font-semibold hover:text-primary"
+                              >
+                                {citation.name}
+                              </button>
+                              <p className="mt-1 text-sm text-muted-foreground">{citation.whyRelevant}</p>
+                            </div>
+                            {citation.urls.length > 0 ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {citation.urls.map((url) => (
+                                  <a
+                                    key={`${citation.id}-${url}`}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                                  >
+                                    {url}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : null}
+                          </article>
+                        ))}
                       </div>
-                      {typeof company.score === "number" ? (
-                        <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-700">
-                          score {company.score.toFixed(3)}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-700">
-                      {company.batch ? <span className="rounded-full bg-zinc-100 px-2 py-1">{company.batch}</span> : null}
-                      {company.stage ? <span className="rounded-full bg-zinc-100 px-2 py-1">{company.stage}</span> : null}
-                      {company.is_hiring ? <span className="rounded-full bg-emerald-100 px-2 py-1">Hiring</span> : null}
-                      {company.nonprofit ? <span className="rounded-full bg-blue-100 px-2 py-1">Nonprofit</span> : null}
-                    </div>
-
-                    <p className="mt-3 line-clamp-3 text-sm text-zinc-600">{company.long_description ?? ""}</p>
-
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
-                      {company.industries.slice(0, 4).map((industry) => {
-                        const selected = industries.includes(industry);
-                        return (
-                          <button
-                            key={`${company.id}-industry-${industry}`}
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              addOrToggleIndustry(industry);
-                            }}
-                            className={`rounded border px-2 py-1 ${
-                              selected
-                                ? "border-blue-400 bg-blue-100 text-blue-700"
-                                : "border-zinc-200 bg-white hover:bg-zinc-100"
-                            }`}
-                          >
-                            {industry}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-zinc-500">
-                      {company.tags.slice(0, 8).map((tag) => {
-                        const selected = tags.includes(tag);
-                        return (
-                          <button
-                            key={`${company.id}-tag-${tag}`}
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              addOrToggleTag(tag);
-                            }}
-                            className={`rounded border px-2 py-1 ${
-                              selected
-                                ? "border-purple-400 bg-purple-100 text-purple-700"
-                                : "border-zinc-200 bg-white hover:bg-zinc-100"
-                            }`}
-                          >
-                            {tag}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-        </main>
+                    ) : null}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          </section>
+        )}
       </div>
+    </div>
+  );
+}
+
+function SegmentedControl({
+  options,
+  value,
+  onChange,
+  compact = false,
+}: {
+  options: Array<{ value: string; label: string; icon?: React.ReactNode }>;
+  value: string;
+  onChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="inline-flex flex-wrap rounded-full border border-border/70 bg-background/70 p-1">
+      {options.map((option) => (
+        <Button
+          key={option.value}
+          type="button"
+          variant={option.value === value ? "secondary" : "ghost"}
+          size={compact ? "sm" : "default"}
+          onClick={() => onChange(option.value)}
+          className="rounded-full"
+        >
+          {option.icon}
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function CompactToggle({
+  label,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function PaginationControls({
+  page,
+  total,
+  pageSize,
+  onPrev,
+  onNext,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/70 p-1">
+      <Button type="button" variant="ghost" size="sm" disabled={page <= 1} onClick={onPrev} className="rounded-full">
+        Prev
+      </Button>
+      <span className="px-2 text-xs text-muted-foreground">
+        {page}/{Math.max(1, Math.ceil(total / pageSize))}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={page * pageSize >= total}
+        onClick={onNext}
+        className="rounded-full"
+      >
+        Next
+      </Button>
     </div>
   );
 }
@@ -904,80 +979,83 @@ function FacetChecklist<T extends string | number>({
   title,
   items,
   selected,
+  loading,
   onToggle,
 }: {
   title: string;
   items: FacetItem<T>[];
   selected: T[];
+  loading: boolean;
   onToggle: (value: T) => void;
 }) {
   return (
-    <section>
-      <h3 className="mb-2 text-sm font-medium">{title}</h3>
-      <div className="max-h-40 space-y-1 overflow-auto pr-1">
-        {items.map((item) => {
-          const checked = selected.includes(item.value);
-          return (
-            <button
-              key={`${title}-${String(item.value)}`}
-              type="button"
-              onClick={() => onToggle(item.value)}
-              className={`flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1 text-left text-xs transition ${
-                checked
-                  ? "border-blue-300 bg-blue-50 text-blue-800"
-                  : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-zinc-50"
-              }`}
-            >
-              <span className="inline-flex items-center gap-2">
-                <span
-                  className={`inline-flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
-                    checked
-                      ? "border-blue-500 bg-blue-500 text-white"
-                      : "border-zinc-300 bg-white text-transparent"
-                  }`}
-                >
-                  ✓
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">{title}</h3>
+        <span className="text-xs text-muted-foreground">
+          {selected.length ? `${selected.length} active` : "Top facets"}
+        </span>
+      </div>
+      <div className="max-h-48 space-y-1 overflow-auto pr-1">
+        {loading ? (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
+            Loading {title.toLowerCase()}...
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
+            No facets available.
+          </div>
+        ) : (
+          items.map((item) => {
+            const checked = selected.includes(item.value);
+            return (
+              <button
+                key={`${title}-${String(item.value)}`}
+                type="button"
+                onClick={() => onToggle(item.value)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition",
+                  checked
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border/70 bg-background/40 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span className="truncate">{String(item.value)}</span>
+                <span className={cn("text-[11px]", checked ? "text-primary" : "text-muted-foreground")}>
+                  {item.count}
                 </span>
-                {String(item.value)}
-              </span>
-              <span className="text-zinc-400">{item.count}</span>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })
+        )}
       </div>
     </section>
   );
 }
 
-function FilterToggleRow({
-  label,
-  checked,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-}) {
+function ErrorBanner({ message }: { message: string }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`flex w-full items-center justify-between rounded-md border px-2 py-2 text-left text-sm transition ${
-        checked
-          ? "border-blue-300 bg-blue-50 text-blue-800"
-          : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-zinc-50"
-      }`}
-    >
-      <span>{label}</span>
-      <span
-        className={`inline-flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
-          checked
-            ? "border-blue-500 bg-blue-500 text-white"
-            : "border-zinc-300 bg-white text-transparent"
-        }`}
-      >
-        ✓
-      </span>
-    </button>
+    <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+      {message}
+    </div>
+  );
+}
+
+function LoadingState({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-16 text-center text-sm text-muted-foreground">
+      {label}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-16 text-center">
+      <p className="text-lg font-medium">No companies match the current search.</p>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Try loosening a filter, switching modes, or broadening the query.
+      </p>
+    </div>
   );
 }

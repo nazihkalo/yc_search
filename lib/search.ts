@@ -1,6 +1,7 @@
 import { parseJsonArray, query, queryOne } from "./db";
 import { EMBEDDING_MODEL, getOpenAiClient } from "./openai";
-import { extractDescriptionFromMarkdown, extractUrlsFromMarkdown } from "./snapshot-utils";
+import { buildCompanyLinks } from "./company-links";
+import { extractDescriptionFromMarkdown } from "./snapshot-utils";
 import type { CompanyRecord } from "./types";
 
 export type SearchFilters = {
@@ -23,7 +24,10 @@ export type SearchParams = {
   filters: SearchFilters;
 };
 
-type SearchResultRow = CompanyRecord;
+type SearchResultRow = CompanyRecord & {
+  content_markdown: string | null;
+  website_url: string | null;
+};
 type AnalyticsCompanyRow = {
   id: number;
   batch: string | null;
@@ -141,6 +145,12 @@ function hydrateResultRows(rows: SearchResultRow[]) {
     nonprofit: Boolean(row.nonprofit),
     top_company: Boolean(row.top_company),
     launched_year: row.launched_at ? new Date(row.launched_at * 1000).getUTCFullYear() : null,
+    top_links: buildCompanyLinks({
+      website: row.website,
+      ycUrl: row.url,
+      snapshotWebsiteUrl: row.website_url,
+      contentMarkdown: row.content_markdown,
+    }),
   }));
 }
 
@@ -195,8 +205,12 @@ export async function keywordSearch(params: SearchParams) {
         c.regions,
         c.url,
         c.small_logo_thumb_url,
-        c.status
+        c.status,
+        s.content_markdown,
+        s.website_url
       FROM companies c
+      LEFT JOIN website_snapshots s
+        ON s.company_id = c.id AND s.source = 'crawl4ai'
       WHERE ${whereSql}
       ${buildSortClause(params.sort, searchQuery)}
       LIMIT @limit OFFSET @offset
@@ -307,8 +321,12 @@ export async function semanticSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
+        s.content_markdown,
+        s.website_url,
         e.vector
       FROM companies c
+      LEFT JOIN website_snapshots s
+        ON s.company_id = c.id AND s.source = 'crawl4ai'
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereClauses.join(" AND ")}
     `, queryParams);
@@ -399,27 +417,12 @@ export type CompanyChatAnswer = {
 };
 
 function buildSocialAndRelevantUrls(row: ChatContextRow) {
-  const baseUrls = [row.website, row.url, row.website_url].filter((value): value is string => Boolean(value));
-  const snapshotUrls = row.content_markdown ? extractUrlsFromMarkdown(row.content_markdown) : [];
-  const all = new Set<string>([...baseUrls, ...snapshotUrls]);
-  const ordered = [...all];
-
-  const socialDomains = [
-    "linkedin.com",
-    "x.com",
-    "twitter.com",
-    "github.com",
-    "facebook.com",
-    "instagram.com",
-    "youtube.com",
-    "discord.com",
-    "t.me",
-    "medium.com",
-  ];
-
-  const socials = ordered.filter((candidate) => socialDomains.some((domain) => candidate.includes(domain)));
-  const nonSocial = ordered.filter((candidate) => !socials.includes(candidate));
-  return [...socials, ...nonSocial].slice(0, 12);
+  return buildCompanyLinks({
+    website: row.website,
+    ycUrl: row.url,
+    snapshotWebsiteUrl: row.website_url,
+    contentMarkdown: row.content_markdown,
+  }).map((link) => link.url);
 }
 
 function stripFence(value: string) {
