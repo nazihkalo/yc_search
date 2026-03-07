@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 
 import { initializeDatabase } from "../../../lib/db";
 import { parseSearchParams } from "../../../lib/request-parsing";
-import { keywordSearch } from "../../../lib/search";
+import { hybridSearch } from "../../../lib/search";
 
 export async function GET(request: Request) {
   try {
     await initializeDatabase();
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
-    const result = await keywordSearch(params);
+    const result = await hybridSearch(params);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

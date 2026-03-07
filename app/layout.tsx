@@ -17,6 +17,11 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "YC Search",
   description: "Modern semantic search, analytics, and Crawl4AI context for Y Combinator companies.",
+  icons: {
+    icon: "/logos/yc_search_logo.png",
+    apple: "/logos/yc_search_logo.png",
+    shortcut: "/logos/yc_search_logo.png",
+  },
 };
 
 export default function RootLayout({

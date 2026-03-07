@@ -142,6 +142,130 @@ function buildSortClause(sort: SearchParams["sort"], query: string) {
   return "ORDER BY c.top_company DESC, c.name ASC";
 }
 
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function applyKeywordLikeParams(searchQuery: string, queryParams: Record<string, string | number>) {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const escapedQuery = escapeLikePattern(normalizedQuery);
+  queryParams.query_plain = normalizedQuery;
+  queryParams.query_exact = normalizedQuery;
+  queryParams.query_prefix = `${escapedQuery}%`;
+  queryParams.query_contains = `%${escapedQuery}%`;
+}
+
+function buildKeywordScoreSql() {
+  return `
+    (
+      CASE
+        WHEN @query_plain = '' THEN 0
+        ELSE
+          CASE WHEN LOWER(c.name) = @query_exact THEN 1.05 ELSE 0 END
+          + CASE WHEN LOWER(c.name) LIKE @query_prefix ESCAPE '\\' THEN 0.55 ELSE 0 END
+          + CASE WHEN LOWER(c.name) LIKE @query_contains ESCAPE '\\' THEN 0.35 ELSE 0 END
+          + CASE WHEN LOWER(COALESCE(c.one_liner, '')) LIKE @query_contains ESCAPE '\\' THEN 0.3 ELSE 0 END
+          + CASE WHEN LOWER(COALESCE(c.industry, '')) LIKE @query_contains ESCAPE '\\' THEN 0.22 ELSE 0 END
+          + CASE WHEN LOWER(COALESCE(c.long_description, '')) LIKE @query_contains ESCAPE '\\' THEN 0.14 ELSE 0 END
+          + CASE WHEN LOWER(COALESCE(c.search_text, '')) LIKE @query_contains ESCAPE '\\' THEN 0.1 ELSE 0 END
+      END
+    )
+  `;
+}
+
+function buildHybridSortClause(sort: SearchParams["sort"]) {
+  if (sort === "newest") {
+    return "ORDER BY c.launched_at DESC NULLS LAST, hybrid_score DESC, c.top_company DESC, c.name ASC";
+  }
+  if (sort === "team_size") {
+    return "ORDER BY c.team_size DESC NULLS LAST, hybrid_score DESC, c.top_company DESC, c.name ASC";
+  }
+  if (sort === "name") {
+    return "ORDER BY c.name ASC, hybrid_score DESC";
+  }
+  return "ORDER BY hybrid_score DESC, c.top_company DESC, c.team_size DESC NULLS LAST, c.name ASC";
+}
+
+function computeKeywordScore(
+  row: Pick<SearchResultRow, "name" | "one_liner" | "industry" | "long_description">,
+  searchQuery: string,
+) {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  const name = row.name.toLowerCase();
+  const oneLiner = row.one_liner?.toLowerCase() ?? "";
+  const industry = row.industry?.toLowerCase() ?? "";
+  const description = row.long_description?.toLowerCase() ?? "";
+
+  let score = 0;
+  if (name === normalizedQuery) {
+    score += 1.05;
+  }
+  if (name.startsWith(normalizedQuery)) {
+    score += 0.55;
+  }
+  if (name.includes(normalizedQuery)) {
+    score += 0.35;
+  }
+  if (oneLiner.includes(normalizedQuery)) {
+    score += 0.3;
+  }
+  if (industry.includes(normalizedQuery)) {
+    score += 0.22;
+  }
+  if (description.includes(normalizedQuery)) {
+    score += 0.14;
+  }
+
+  return Math.min(score, 1.4);
+}
+
+function compareHybridRows(
+  left: { name: string; launched_at: number | null; team_size: number | null; hybrid_score: number; top_company: boolean | number },
+  right: { name: string; launched_at: number | null; team_size: number | null; hybrid_score: number; top_company: boolean | number },
+  sort: SearchParams["sort"],
+) {
+  if (sort === "newest") {
+    const launchedAtDifference =
+      left.launched_at === right.launched_at ? 0 : (right.launched_at ?? Number.NEGATIVE_INFINITY) - (left.launched_at ?? Number.NEGATIVE_INFINITY);
+    if (launchedAtDifference !== 0) {
+      return launchedAtDifference;
+    }
+  } else if (sort === "team_size") {
+    const teamSizeDifference =
+      left.team_size === right.team_size ? 0 : (right.team_size ?? Number.NEGATIVE_INFINITY) - (left.team_size ?? Number.NEGATIVE_INFINITY);
+    if (teamSizeDifference !== 0) {
+      return teamSizeDifference;
+    }
+  } else if (sort === "name") {
+    const nameDifference = left.name.localeCompare(right.name);
+    if (nameDifference !== 0) {
+      return nameDifference;
+    }
+  } else {
+    const relevanceDifference = right.hybrid_score - left.hybrid_score;
+    if (relevanceDifference !== 0) {
+      return relevanceDifference;
+    }
+  }
+
+  const hybridDifference = right.hybrid_score - left.hybrid_score;
+  if (hybridDifference !== 0) {
+    return hybridDifference;
+  }
+
+  const leftTopCompany = Number(Boolean(left.top_company));
+  const rightTopCompany = Number(Boolean(right.top_company));
+  if (leftTopCompany !== rightTopCompany) {
+    return rightTopCompany - leftTopCompany;
+  }
+
+  return left.name.localeCompare(right.name);
+}
+
 function hydrateResultRows(rows: SearchResultRow[]) {
   return rows.map((row) => ({
     ...row,
@@ -418,6 +542,84 @@ async function semanticSearchLegacy(params: SearchParams, queryVectorLiteral: st
   };
 }
 
+async function hybridSearchLegacy(params: SearchParams, queryVectorLiteral: string) {
+  const searchQuery = params.query.trim();
+  const whereClauses = ["1=1"];
+  const queryParams: Record<string, string | number> = {};
+  buildFilterWhereClause(params.filters, queryParams, whereClauses);
+
+  const rows = await query<SearchResultRow & { vector: string | null }>(`
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.website,
+        c.one_liner,
+        c.long_description,
+        c.batch,
+        c.stage,
+        c.industry,
+        c.all_locations,
+        c.launched_at,
+        c.team_size,
+        c.is_hiring,
+        c.nonprofit,
+        c.top_company,
+        c.tags,
+        c.industries,
+        c.regions,
+        c.url,
+        c.small_logo_thumb_url,
+        c.status,
+        s.content_markdown,
+        s.website_url,
+        e.vector
+      FROM companies c
+      LEFT JOIN website_snapshots s
+        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      LEFT JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${whereClauses.join(" AND ")}
+    `, queryParams);
+
+  const queryVector = parseVectorString(queryVectorLiteral);
+  const scored = rows
+    .map((row) => {
+      const keywordScore = computeKeywordScore(row, searchQuery);
+      const vector = row.vector ? parseVectorString(row.vector) : [];
+      let semanticScore = 0;
+
+      if (vector.length === queryVector.length && vector.length > 0) {
+        let dot = 0;
+        let normA = 0;
+        let normB = 0;
+        for (let i = 0; i < vector.length; i += 1) {
+          dot += queryVector[i] * vector[i];
+          normA += queryVector[i] * queryVector[i];
+          normB += vector[i] * vector[i];
+        }
+        semanticScore = !normA || !normB ? 0 : dot / (Math.sqrt(normA) * Math.sqrt(normB));
+      }
+
+      const hybridScore = semanticScore * 0.72 + keywordScore * 0.45;
+      return { ...row, hybrid_score: hybridScore };
+    })
+    .filter((row) => row.vector || row.hybrid_score > 0)
+    .sort((left, right) => compareHybridRows(left, right, params.sort));
+
+  const start = (params.page - 1) * params.pageSize;
+  const paged = scored.slice(start, start + params.pageSize);
+
+  return {
+    total: scored.length,
+    page: params.page,
+    pageSize: params.pageSize,
+    results: hydrateResultRows(paged).map((row, index) => ({
+      ...row,
+      score: Number(paged[index]?.hybrid_score.toFixed(4) ?? 0),
+    })),
+  };
+}
+
 export async function semanticSearch(params: SearchParams) {
   const searchQuery = params.query.trim();
   if (!searchQuery) {
@@ -491,6 +693,129 @@ export async function semanticSearch(params: SearchParams) {
       score: Number(rows[index]?.score.toFixed(4) ?? 0),
     })),
   };
+}
+
+export async function hybridSearch(params: SearchParams) {
+  const searchQuery = params.query.trim();
+  if (!searchQuery) {
+    return keywordSearch(params);
+  }
+
+  const queryVectorLiteral = await getOrCreateQueryEmbedding(searchQuery);
+  if (!(await isPgVectorReady())) {
+    return hybridSearchLegacy(params, queryVectorLiteral);
+  }
+
+  const whereClauses = ["1=1"];
+  const queryParams: Record<string, string | number> = {};
+  buildFilterWhereClause(params.filters, queryParams, whereClauses);
+  applyKeywordLikeParams(searchQuery, queryParams);
+  queryParams.query_vector = queryVectorLiteral;
+  queryParams.limit = params.pageSize;
+  queryParams.offset = (params.page - 1) * params.pageSize;
+
+  const keywordScoreSql = buildKeywordScoreSql();
+  const semanticScoreSql = "COALESCE(1 - (e.vector <=> @query_vector::vector(1536)), 0)";
+  const hybridScoreSql = `(${semanticScoreSql} * 0.72 + LEAST(${keywordScoreSql}, 1.4) * 0.45)`;
+  const rankableWhereSql = [...whereClauses, `(e.vector IS NOT NULL OR ${keywordScoreSql} > 0)`].join(" AND ");
+
+  const countRow = await queryOne<{ total: string | number }>(
+    `
+      SELECT COUNT(*) AS total
+      FROM companies c
+      LEFT JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${rankableWhereSql}
+    `,
+    queryParams,
+  );
+
+  const rows = await query<SearchResultRow & { hybrid_score: number }>(`
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.website,
+        c.one_liner,
+        c.long_description,
+        c.batch,
+        c.stage,
+        c.industry,
+        c.all_locations,
+        c.launched_at,
+        c.team_size,
+        c.is_hiring,
+        c.nonprofit,
+        c.top_company,
+        c.tags,
+        c.industries,
+        c.regions,
+        c.url,
+        c.small_logo_thumb_url,
+        c.status,
+        s.content_markdown,
+        s.website_url,
+        ${hybridScoreSql} AS hybrid_score
+      FROM companies c
+      LEFT JOIN website_snapshots s
+        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      LEFT JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${rankableWhereSql}
+      ${buildHybridSortClause(params.sort)}
+      LIMIT @limit OFFSET @offset
+    `, queryParams);
+
+  return {
+    total: Number(countRow?.total ?? 0),
+    page: params.page,
+    pageSize: params.pageSize,
+    results: hydrateResultRows(rows).map((row, index) => ({
+      ...row,
+      score: Number(rows[index]?.hybrid_score.toFixed(4) ?? 0),
+    })),
+  };
+}
+
+export async function getHybridTopCompanyIds(params: SearchParams, limit = 100) {
+  const searchQuery = params.query.trim();
+  if (!searchQuery) {
+    return [];
+  }
+
+  const queryVectorLiteral = await getOrCreateQueryEmbedding(searchQuery);
+  if (!(await isPgVectorReady())) {
+    const legacy = await hybridSearchLegacy(
+      {
+        ...params,
+        page: 1,
+        pageSize: Math.max(limit, params.pageSize),
+      },
+      queryVectorLiteral,
+    );
+    return legacy.results.slice(0, limit).map((row) => row.id);
+  }
+
+  const whereClauses = ["1=1"];
+  const queryParams: Record<string, string | number> = {};
+  buildFilterWhereClause(params.filters, queryParams, whereClauses);
+  applyKeywordLikeParams(searchQuery, queryParams);
+  queryParams.query_vector = queryVectorLiteral;
+  queryParams.limit = limit;
+
+  const keywordScoreSql = buildKeywordScoreSql();
+  const semanticScoreSql = "COALESCE(1 - (e.vector <=> @query_vector::vector(1536)), 0)";
+  const hybridScoreSql = `(${semanticScoreSql} * 0.72 + LEAST(${keywordScoreSql}, 1.4) * 0.45)`;
+  const rankableWhereSql = [...whereClauses, `(e.vector IS NOT NULL OR ${keywordScoreSql} > 0)`].join(" AND ");
+
+  const rows = await query<{ id: number }>(`
+      SELECT c.id
+      FROM companies c
+      LEFT JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${rankableWhereSql}
+      ${buildHybridSortClause("relevance").replace("hybrid_score", hybridScoreSql)}
+      LIMIT @limit
+    `, queryParams);
+
+  return rows.map((row) => row.id);
 }
 
 export async function getSemanticTopCompanyIds(params: SearchParams, limit = 100) {
@@ -728,16 +1053,18 @@ export async function answerCompanyQuestion(
 
 export async function getFacets() {
   const companies = await query<{
+    batch: string | null;
     tags: string;
     industries: string;
     regions: string;
     stage: string | null;
     launched_at: number | null;
   }>(`
-      SELECT tags, industries, regions, stage, launched_at
+      SELECT batch, tags, industries, regions, stage, launched_at
       FROM companies
     `);
 
+  const batchCounts = new Map<string, number>();
   const tagCounts = new Map<string, number>();
   const industryCounts = new Map<string, number>();
   const regionCounts = new Map<string, number>();
@@ -745,6 +1072,9 @@ export async function getFacets() {
   const yearCounts = new Map<number, number>();
 
   for (const company of companies) {
+    if (company.batch) {
+      batchCounts.set(company.batch, (batchCounts.get(company.batch) ?? 0) + 1);
+    }
     for (const tag of parseJsonArray(company.tags)) {
       tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
     }
@@ -769,6 +1099,20 @@ export async function getFacets() {
       .map(([value, count]) => ({ value, count }));
 
   return {
+    batches: formatFacet(batchCounts).sort((left, right) => {
+      const leftSort = batchSortKey(left.value);
+      const rightSort = batchSortKey(right.value);
+      const leftYear = leftSort.year ?? Number.NEGATIVE_INFINITY;
+      const rightYear = rightSort.year ?? Number.NEGATIVE_INFINITY;
+
+      if (leftYear !== rightYear) {
+        return rightYear - leftYear;
+      }
+      if (leftSort.seasonOrder !== rightSort.seasonOrder) {
+        return leftSort.seasonOrder - rightSort.seasonOrder;
+      }
+      return left.value.localeCompare(right.value);
+    }),
     tags: formatFacet(tagCounts),
     industries: formatFacet(industryCounts),
     regions: formatFacet(regionCounts),

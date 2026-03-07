@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import {
   Brain,
   LayoutGrid,
+  Layers3,
   RefreshCcw,
   Search,
   SlidersHorizontal,
@@ -28,11 +30,11 @@ import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 import { cn } from "../lib/utils";
 
-type SearchMode = "keyword" | "semantic";
 type AnalyticsColorBy = "none" | "tags" | "industries";
 type ResultsView = "cards" | "table";
 type SortOption = "relevance" | "newest" | "team_size" | "name";
 type DashboardTab = "results" | "analytics";
+type CohortGranularity = "year" | "batch";
 
 const QUERY_EXAMPLES = [
   "B2B SaaS companies in healthcare",
@@ -66,15 +68,52 @@ function pickTopFacets<T extends string | number>(items: FacetItem<T>[], count =
   return items.slice(0, count);
 }
 
+function parseBatchYear(batch: string) {
+  const compactBatchMatch = batch.match(/^([WSF])(\d{2})$/i);
+  if (compactBatchMatch) {
+    return 2000 + Number(compactBatchMatch[2]);
+  }
+
+  const namedBatchMatch = batch.match(/^(Winter|Spring|Summer|Fall)\s+(\d{4})$/i);
+  if (namedBatchMatch) {
+    return Number(namedBatchMatch[2]);
+  }
+
+  return null;
+}
+
+function groupBatchFacets(items: FacetItem<string>[]) {
+  const grouped = new Map<number | null, FacetItem<string>[]>();
+
+  for (const item of items) {
+    const year = parseBatchYear(item.value);
+    grouped.set(year, [...(grouped.get(year) ?? []), item]);
+  }
+
+  return [...grouped.entries()]
+    .sort((left, right) => {
+      const leftYear = left[0] ?? Number.NEGATIVE_INFINITY;
+      const rightYear = right[0] ?? Number.NEGATIVE_INFINITY;
+      return rightYear - leftYear;
+    })
+    .map(([year, batches]) => ({
+      year,
+      label: year ? String(year) : "Other",
+      batches,
+    }));
+}
+
 export function SearchDashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<DashboardTab>((searchParams.get("tab") as DashboardTab) ?? "results");
-  const [mode, setMode] = useState<SearchMode>((searchParams.get("mode") as SearchMode) ?? "keyword");
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [sort, setSort] = useState<SortOption>((searchParams.get("sort") as SortOption) ?? "relevance");
   const [view, setView] = useState<ResultsView>((searchParams.get("view") as ResultsView) ?? "table");
+  const [cohortGranularity, setCohortGranularity] = useState<CohortGranularity>(
+    searchParams.get("cohort") === "batch" ? "batch" : "year",
+  );
   const [tags, setTags] = useState<string[]>(parseCsv(searchParams.get("tags")));
   const [industries, setIndustries] = useState<string[]>(parseCsv(searchParams.get("industries")));
   const [batches, setBatches] = useState<string[]>(parseCsv(searchParams.get("batches")));
@@ -141,10 +180,10 @@ export function SearchDashboard() {
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
     params.set("tab", activeTab);
-    params.set("mode", mode);
     params.set("sort", sort);
     params.set("view", view);
     params.set("colorBy", analyticsColorBy);
+    params.set("cohort", cohortGranularity);
     if (query.trim()) {
       params.set("q", query.trim());
     }
@@ -182,9 +221,9 @@ export function SearchDashboard() {
     activeTab,
     analyticsColorBy,
     batches,
+    cohortGranularity,
     industries,
     isHiring,
-    mode,
     nonprofit,
     page,
     query,
@@ -200,10 +239,9 @@ export function SearchDashboard() {
   const returnToPath = useMemo(() => `/?${queryString}`, [queryString]);
 
   useEffect(() => {
-    const endpoint = mode === "semantic" ? "/api/semantic-search" : "/api/search";
     setResultsLoading(true);
 
-    fetch(`${endpoint}?${queryString}`)
+    fetch(`/api/search?${queryString}`)
       .then((response) => response.json())
       .then((payload) => {
         if (payload.error) {
@@ -219,7 +257,7 @@ export function SearchDashboard() {
       .finally(() => setResultsLoading(false));
 
     router.replace(`/?${queryString}`, { scroll: false });
-  }, [mode, queryString, router]);
+  }, [queryString, router]);
 
   useEffect(() => {
     if (activeTab !== "analytics") {
@@ -377,10 +415,14 @@ export function SearchDashboard() {
       label: value,
       onRemove: () => addOrToggleIndustry(value),
     })),
-    ...batches.map((value) => ({ key: `batch-${value}`, label: value, onRemove: () => addOrToggleBatch(value) })),
+    ...batches.map((value) => ({
+      key: `batch-${value}`,
+      label: `Batch ${value}`,
+      onRemove: () => addOrToggleBatch(value),
+    })),
     ...years.map((value) => ({
       key: `year-${value}`,
-      label: String(value),
+      label: `Year ${value}`,
       onRemove: () => {
         setPage(1);
         toggleArrayValue(value, years, setYears);
@@ -444,7 +486,20 @@ export function SearchDashboard() {
     <div className="min-h-screen w-full px-4 py-6 sm:px-6 lg:px-8">
       <div className="space-y-6">
         <header className="flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">YC Search</h1>
+          <div className="flex min-w-0 items-center gap-4">
+            <Image
+              src="/logos/yc_search_logo.png"
+              alt="YC Search logo"
+              width={56}
+              height={56}
+              className="size-14 rounded-2xl border border-border/70 object-cover shadow-sm"
+              priority
+            />
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">YC Search</h1>
+              <p className="text-sm text-muted-foreground">Hybrid keyword + semantic search for YC companies.</p>
+            </div>
+          </div>
           <ThemeToggle />
         </header>
 
@@ -479,96 +534,105 @@ export function SearchDashboard() {
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <SegmentedControl
-                  options={[
-                    { value: "keyword", label: "Keyword" },
-                    { value: "semantic", label: "Semantic" },
-                  ]}
-                  value={mode}
-                  onChange={(next) => {
-                    setPage(1);
-                    setMode(next as SearchMode);
-                  }}
-                />
-                <SegmentedControl
-                  options={[
-                    { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
-                    { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
-                  ]}
-                  value={view}
-                  onChange={(next) => setView(next as ResultsView)}
-                />
-              </div>
+              <SegmentedControl
+                options={[
+                  { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
+                  { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
+                ]}
+                value={view}
+                onChange={(next) => setView(next as ResultsView)}
+              />
             </div>
 
-            <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <SegmentedControl
-                  compact
-                  options={[
-                    { value: "results", label: "Results" },
-                    { value: "analytics", label: "Analytics" },
-                  ]}
-                  value={activeTab}
-                  onChange={(next) => setActiveTab(next as DashboardTab)}
-                />
-                <SegmentedControl
-                  compact
-                  options={[
-                    { value: "relevance", label: "Relevance" },
-                    { value: "newest", label: "Newest" },
-                    { value: "team_size", label: "Team" },
-                    { value: "name", label: "Name" },
-                  ]}
-                  value={sort}
-                  onChange={(next) => {
-                    setPage(1);
-                    setSort(next as SortOption);
-                  }}
-                />
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SegmentedControl
+                    compact
+                    options={[
+                      { value: "results", label: "Results" },
+                      { value: "analytics", label: "Analytics" },
+                    ]}
+                    value={activeTab}
+                    onChange={(next) => setActiveTab(next as DashboardTab)}
+                  />
+                  <SegmentedControl
+                    compact
+                    options={[
+                      { value: "relevance", label: "Relevance" },
+                      { value: "newest", label: "Newest" },
+                      { value: "team_size", label: "Team" },
+                      { value: "name", label: "Name" },
+                    ]}
+                    value={sort}
+                    onChange={(next) => {
+                      setPage(1);
+                      setSort(next as SortOption);
+                    }}
+                  />
+                  <CompactToggle
+                    label="Hiring"
+                    checked={isHiring}
+                    onCheckedChange={(checked) => {
+                      setPage(1);
+                      setIsHiring(checked);
+                    }}
+                  />
+                  <CompactToggle
+                    label="Nonprofit"
+                    checked={nonprofit}
+                    onCheckedChange={(checked) => {
+                      setPage(1);
+                      setNonprofit(checked);
+                    }}
+                  />
+                  <CompactToggle
+                    label="Top"
+                    checked={topCompany}
+                    onCheckedChange={(checked) => {
+                      setPage(1);
+                      setTopCompany(checked);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAdvancedFilters((current) => !current)}
+                    className="rounded-full"
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                    More filters
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={resetAllFilters} className="rounded-full">
+                    <RefreshCcw className="size-3.5" />
+                    Reset
+                  </Button>
+                </div>
+
+                <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-2 text-xs font-medium text-primary">
+                  <Layers3 className="size-3.5" />
+                  Hybrid search
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <CompactToggle
-                  label="Hiring"
-                  checked={isHiring}
-                  onCheckedChange={(checked) => {
-                    setPage(1);
-                    setIsHiring(checked);
-                  }}
-                />
-                <CompactToggle
-                  label="Nonprofit"
-                  checked={nonprofit}
-                  onCheckedChange={(checked) => {
-                    setPage(1);
-                    setNonprofit(checked);
-                  }}
-                />
-                <CompactToggle
-                  label="Top"
-                  checked={topCompany}
-                  onCheckedChange={(checked) => {
-                    setPage(1);
-                    setTopCompany(checked);
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAdvancedFilters((current) => !current)}
-                  className="rounded-full"
-                >
-                  <SlidersHorizontal className="size-3.5" />
-                  Filters
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={resetAllFilters} className="rounded-full">
-                  <RefreshCcw className="size-3.5" />
-                  Reset
-                </Button>
-              </div>
+              <CohortFilterPanel
+                granularity={cohortGranularity}
+                onGranularityChange={(next) => setCohortGranularity(next)}
+                years={pickTopFacets(facets?.years ?? [], 18)}
+                batches={pickTopFacets(facets?.batches ?? [], 40)}
+                selectedYears={years}
+                selectedBatches={batches}
+                loading={facetsLoading}
+                onToggleYear={(value) => {
+                  setPage(1);
+                  toggleArrayValue(value, years, setYears);
+                }}
+                onToggleBatch={(value) => {
+                  setPage(1);
+                  toggleArrayValue(value, batches, setBatches);
+                }}
+              />
             </div>
           </div>
 
@@ -589,7 +653,7 @@ export function SearchDashboard() {
 
           {showAdvancedFilters ? (
             <Card className="border-border/70 bg-card/95">
-              <CardContent className="grid gap-5 p-4 md:grid-cols-2 xl:grid-cols-5">
+              <CardContent className="grid gap-5 p-4 md:grid-cols-2 xl:grid-cols-4">
                 <FacetChecklist
                   title="Tags"
                   items={pickTopFacets(facets?.tags ?? [], 20)}
@@ -608,16 +672,6 @@ export function SearchDashboard() {
                   onToggle={(value) => {
                     setPage(1);
                     toggleArrayValue(value, industries, setIndustries);
-                  }}
-                />
-                <FacetChecklist
-                  title="Years"
-                  items={pickTopFacets(facets?.years ?? [], 16)}
-                  selected={years}
-                  loading={facetsLoading}
-                  onToggle={(value) => {
-                    setPage(1);
-                    toggleArrayValue(Number(value), years, setYears);
                   }}
                 />
                 <FacetChecklist
@@ -650,9 +704,7 @@ export function SearchDashboard() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-medium">{results.total.toLocaleString()} companies</p>
-                <p className="text-xs text-muted-foreground">
-                  {mode === "semantic" ? "Semantic" : "Keyword"} search, page {results.page} of {totalPages}
-                </p>
+                <p className="text-xs text-muted-foreground">Hybrid search, page {results.page} of {totalPages}</p>
               </div>
               <PaginationControls
                 page={page}
@@ -1033,6 +1085,147 @@ function FacetChecklist<T extends string | number>({
   );
 }
 
+function CohortFilterPanel({
+  granularity,
+  onGranularityChange,
+  years,
+  batches,
+  selectedYears,
+  selectedBatches,
+  loading,
+  onToggleYear,
+  onToggleBatch,
+}: {
+  granularity: CohortGranularity;
+  onGranularityChange: (value: CohortGranularity) => void;
+  years: FacetItem<number>[];
+  batches: FacetItem<string>[];
+  selectedYears: number[];
+  selectedBatches: string[];
+  loading: boolean;
+  onToggleYear: (value: number) => void;
+  onToggleBatch: (value: string) => void;
+}) {
+  const groupedBatches = useMemo(() => groupBatchFacets(batches), [batches]);
+  const visibleBatchGroups = selectedYears.length
+    ? groupedBatches.filter((group) => group.year !== null && selectedYears.includes(group.year))
+    : groupedBatches.slice(0, 6);
+
+  return (
+    <div className="rounded-2xl border border-border/70 bg-background/45 p-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Cohort</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {granularity === "year"
+              ? "Broader filtering by launch year."
+              : "Pick a year, then optionally narrow to a specific batch."}
+          </p>
+        </div>
+        <SegmentedControl
+          compact
+          options={[
+            { value: "year", label: "Year" },
+            { value: "batch", label: "Batch" },
+          ]}
+          value={granularity}
+          onChange={(value) => onGranularityChange(value as CohortGranularity)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="mt-3 rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
+          Loading cohort filters...
+        </div>
+      ) : granularity === "year" ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {years.map((item) => {
+            const selected = selectedYears.includes(item.value);
+            return (
+              <button
+                key={`cohort-year-${item.value}`}
+                type="button"
+                onClick={() => onToggleYear(item.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs transition",
+                  selected
+                    ? "border-primary/40 bg-primary/12 text-primary"
+                    : "border-border/70 bg-background/80 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {item.value}
+                <span className="ml-2 text-[11px] opacity-70">{item.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {years.map((item) => {
+              const selected = selectedYears.includes(item.value);
+              return (
+                <button
+                  key={`batch-year-${item.value}`}
+                  type="button"
+                  onClick={() => onToggleYear(item.value)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs transition",
+                    selected
+                      ? "border-primary/40 bg-primary/12 text-primary"
+                      : "border-border/70 bg-background/80 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {item.value}
+                  <span className="ml-2 text-[11px] opacity-70">{item.count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleBatchGroups.length > 0 ? (
+              visibleBatchGroups.map((group) => (
+                <section key={`batch-group-${group.label}`} className="rounded-2xl border border-border/70 bg-card/70 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-medium">{group.label}</h3>
+                    <span className="text-[11px] text-muted-foreground">{group.batches.length} batches</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {group.batches.map((item) => {
+                      const selected = selectedBatches.includes(item.value);
+                      return (
+                        <button
+                          key={`cohort-batch-${item.value}`}
+                          type="button"
+                          onClick={() => onToggleBatch(item.value)}
+                          className={cn(
+                            "rounded-full border px-3 py-1.5 text-xs transition",
+                            selected
+                              ? "border-primary/40 bg-primary/12 text-primary"
+                              : "border-border/70 bg-background/80 text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {item.value}
+                          <span className="ml-2 text-[11px] opacity-70">{item.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
+                Select a year above to narrow batch choices.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ErrorBanner({ message }: { message: string }) {
   return (
     <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
@@ -1053,9 +1246,7 @@ function EmptyState() {
   return (
     <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-16 text-center">
       <p className="text-lg font-medium">No companies match the current search.</p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Try loosening a filter, switching modes, or broadening the query.
-      </p>
+      <p className="mt-2 text-sm text-muted-foreground">Try loosening a filter or broadening the query.</p>
     </div>
   );
 }

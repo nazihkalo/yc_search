@@ -8,6 +8,7 @@ export type FacetItem<T extends string | number = string> = {
 export type FacetsPayload = {
   tags: FacetItem<string>[];
   industries: FacetItem<string>[];
+  batches: FacetItem<string>[];
   regions: FacetItem<string>[];
   stages: FacetItem<string>[];
   years: FacetItem<number>[];
