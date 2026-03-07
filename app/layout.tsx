@@ -18,9 +18,9 @@ export const metadata: Metadata = {
   title: "YC Search",
   description: "Modern semantic search, analytics, and Crawl4AI context for Y Combinator companies.",
   icons: {
-    icon: "/logos/yc_search_logo.png",
-    apple: "/logos/yc_search_logo.png",
-    shortcut: "/logos/yc_search_logo.png",
+    icon: "/logos/yc_search_logo.svg",
+    apple: "/logos/yc_search_logo.svg",
+    shortcut: "/logos/yc_search_logo.svg",
   },
 };
 

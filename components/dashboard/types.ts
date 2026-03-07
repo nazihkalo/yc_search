@@ -48,6 +48,18 @@ export type SearchResponse = {
   results: CompanyResult[];
 };
 
+export type TableColumnKey =
+  | "score"
+  | "industries"
+  | "tags"
+  | "batch"
+  | "stage"
+  | "team_size"
+  | "status"
+  | "links"
+  | "location"
+  | "launched_year";
+
 export type AnalyticsResponse = {
   colorBy: "none" | "tags" | "industries";
   totalCompanies: number;

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Brain,
   LayoutGrid,
   Layers3,
+  ListFilter,
   RefreshCcw,
   Search,
   SlidersHorizontal,
@@ -22,6 +23,7 @@ import type {
   FacetItem,
   FacetsPayload,
   SearchResponse,
+  TableColumnKey,
 } from "./dashboard/types";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
@@ -43,6 +45,32 @@ const QUERY_EXAMPLES = [
   "Top fintech infrastructure startups",
 ];
 
+const CARD_PAGE_SIZE = 24;
+const DEFAULT_TABLE_PAGE_SIZE = 50;
+const TABLE_PAGE_SIZE_OPTIONS = [25, 50, 100];
+const DEFAULT_TABLE_COLUMNS: TableColumnKey[] = [
+  "score",
+  "industries",
+  "tags",
+  "batch",
+  "stage",
+  "team_size",
+  "status",
+  "links",
+];
+const ALL_TABLE_COLUMNS: Array<{ key: TableColumnKey; label: string }> = [
+  { key: "score", label: "Score" },
+  { key: "industries", label: "Industries" },
+  { key: "tags", label: "Tags" },
+  { key: "batch", label: "Batch" },
+  { key: "stage", label: "Stage" },
+  { key: "team_size", label: "Team size" },
+  { key: "status", label: "Status" },
+  { key: "links", label: "Links" },
+  { key: "location", label: "Location" },
+  { key: "launched_year", label: "Launched year" },
+];
+
 function parseCsv(value: string | null) {
   if (!value) {
     return [];
@@ -62,6 +90,23 @@ function parseYears(value: string | null) {
   return parseCsv(value)
     .map((item) => Number(item))
     .filter((item) => Number.isFinite(item));
+}
+
+function parseTablePageSize(value: string | null) {
+  const parsed = Number(value ?? DEFAULT_TABLE_PAGE_SIZE);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_TABLE_PAGE_SIZE;
+  }
+
+  return Math.min(100, Math.max(1, parsed));
+}
+
+function parseTableColumns(value: string | null) {
+  const requested = parseCsv(value).filter((item): item is TableColumnKey =>
+    ALL_TABLE_COLUMNS.some((column) => column.key === item),
+  );
+
+  return requested.length > 0 ? requested : DEFAULT_TABLE_COLUMNS;
 }
 
 function pickTopFacets<T extends string | number>(items: FacetItem<T>[], count = 30) {
@@ -124,10 +169,15 @@ export function SearchDashboard() {
   const [nonprofit, setNonprofit] = useState(searchParams.get("nonprofit") === "1");
   const [topCompany, setTopCompany] = useState(searchParams.get("topCompany") === "1");
   const [page, setPage] = useState(Number(searchParams.get("page") ?? 1));
+  const [tablePageSize, setTablePageSize] = useState(parseTablePageSize(searchParams.get("pageSize")));
+  const [visibleTableColumns, setVisibleTableColumns] = useState<TableColumnKey[]>(
+    parseTableColumns(searchParams.get("columns")),
+  );
   const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
     (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
@@ -148,7 +198,9 @@ export function SearchDashboard() {
   const [chatResponse, setChatResponse] = useState<ChatResponse | null>(null);
   const [facetsLoading, setFacetsLoading] = useState(true);
   const [resultsLoading, setResultsLoading] = useState(false);
+  const [loadingMoreCards, setLoadingMoreCards] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setFacetsLoading(true);
@@ -177,13 +229,20 @@ export function SearchDashboard() {
     return () => window.clearInterval(interval);
   }, [query]);
 
-  const queryString = useMemo(() => {
+  useEffect(() => {
+    if (view !== "table") {
+      setShowColumnPicker(false);
+    }
+  }, [view]);
+
+  const baseQueryString = useMemo(() => {
     const params = new URLSearchParams();
     params.set("tab", activeTab);
     params.set("sort", sort);
     params.set("view", view);
     params.set("colorBy", analyticsColorBy);
     params.set("cohort", cohortGranularity);
+    params.set("columns", arrayToCsv(visibleTableColumns));
     if (query.trim()) {
       params.set("q", query.trim());
     }
@@ -214,8 +273,6 @@ export function SearchDashboard() {
     if (topCompany) {
       params.set("topCompany", "1");
     }
-    params.set("page", String(page));
-    params.set("pageSize", "20");
     return params.toString();
   }, [
     activeTab,
@@ -225,21 +282,41 @@ export function SearchDashboard() {
     industries,
     isHiring,
     nonprofit,
-    page,
     query,
     regions,
     sort,
     stages,
     tags,
     topCompany,
+    visibleTableColumns,
     view,
     years,
   ]);
 
-  const returnToPath = useMemo(() => `/?${queryString}`, [queryString]);
+  const tableQueryString = useMemo(() => {
+    const params = new URLSearchParams(baseQueryString);
+    params.set("page", String(page));
+    params.set("pageSize", String(tablePageSize));
+    return params.toString();
+  }, [baseQueryString, page, tablePageSize]);
+
+  const cardQueryString = useMemo(() => {
+    const params = new URLSearchParams(baseQueryString);
+    params.set("page", "1");
+    params.set("pageSize", String(CARD_PAGE_SIZE));
+    return params.toString();
+  }, [baseQueryString]);
+
+  const returnToPath = useMemo(
+    () => `/?${view === "table" ? tableQueryString : baseQueryString}`,
+    [baseQueryString, tableQueryString, view],
+  );
 
   useEffect(() => {
     setResultsLoading(true);
+    setLoadingMoreCards(false);
+
+    const queryString = view === "cards" ? cardQueryString : tableQueryString;
 
     fetch(`/api/search?${queryString}`)
       .then((response) => response.json())
@@ -255,16 +332,24 @@ export function SearchDashboard() {
         setError(message);
       })
       .finally(() => setResultsLoading(false));
+  }, [cardQueryString, tableQueryString, view]);
 
-    router.replace(`/?${queryString}`, { scroll: false });
-  }, [queryString, router]);
+  useEffect(() => {
+    const params = new URLSearchParams(baseQueryString);
+    if (view === "table") {
+      params.set("page", String(page));
+      params.set("pageSize", String(tablePageSize));
+    }
+
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  }, [baseQueryString, page, router, tablePageSize, view]);
 
   useEffect(() => {
     if (activeTab !== "analytics") {
       return;
     }
 
-    const params = new URLSearchParams(queryString);
+    const params = new URLSearchParams(baseQueryString);
     params.set("colorBy", analyticsColorBy);
     params.set("topN", "8");
     setAnalyticsLoading(true);
@@ -283,7 +368,7 @@ export function SearchDashboard() {
         setAnalyticsError(message);
       })
       .finally(() => setAnalyticsLoading(false));
-  }, [activeTab, analyticsColorBy, queryString]);
+  }, [activeTab, analyticsColorBy, baseQueryString]);
 
   function toggleArrayValue<T extends string | number>(
     value: T,
@@ -310,6 +395,17 @@ export function SearchDashboard() {
   function addOrToggleBatch(batch: string) {
     setPage(1);
     toggleArrayValue(batch, batches, setBatches);
+  }
+
+  function toggleTableColumn(column: TableColumnKey) {
+    setVisibleTableColumns((current) => {
+      if (current.includes(column)) {
+        return current.filter((item) => item !== column);
+      }
+
+      const next = [...current, column];
+      return ALL_TABLE_COLUMNS.map((item) => item.key).filter((key) => next.includes(key));
+    });
   }
 
   function resetAllFilters() {
@@ -407,6 +503,63 @@ export function SearchDashboard() {
     }
   }
 
+  const loadMoreCards = useCallback(async () => {
+    if (view !== "cards" || resultsLoading || loadingMoreCards || results.results.length >= results.total) {
+      return;
+    }
+
+    const nextPage = results.page + 1;
+    const params = new URLSearchParams(baseQueryString);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(CARD_PAGE_SIZE));
+
+    setLoadingMoreCards(true);
+    try {
+      const response = await fetch(`/api/search?${params.toString()}`);
+      const payload = (await response.json()) as SearchResponse & { error?: string };
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error ?? "Search failed");
+      }
+
+      setError(null);
+      setResults((current) => ({
+        total: payload.total,
+        page: payload.page,
+        pageSize: payload.pageSize,
+        results: [...current.results, ...payload.results],
+      }));
+    } catch (fetchError) {
+      const message = fetchError instanceof Error ? fetchError.message : "Search failed";
+      setError(message);
+    } finally {
+      setLoadingMoreCards(false);
+    }
+  }, [baseQueryString, loadingMoreCards, results.page, results.results.length, results.total, resultsLoading, view]);
+
+  useEffect(() => {
+    if (view !== "cards") {
+      return;
+    }
+
+    const target = loadMoreRef.current;
+    if (!target) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const firstEntry = entries[0];
+        if (firstEntry?.isIntersecting) {
+          void loadMoreCards();
+        }
+      },
+      { rootMargin: "300px 0px" },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadMoreCards, view]);
+
   const totalPages = Math.max(1, Math.ceil(results.total / results.pageSize));
   const activeFilters = [
     ...tags.map((value) => ({ key: `tag-${value}`, label: value, onRemove: () => addOrToggleTag(value) })),
@@ -488,7 +641,7 @@ export function SearchDashboard() {
         <header className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
             <Image
-              src="/logos/yc_search_logo.png"
+              src="/logos/yc_search_logo.svg"
               alt="YC Search logo"
               width={56}
               height={56}
@@ -726,16 +879,51 @@ export function SearchDashboard() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-medium">{results.total.toLocaleString()} companies</p>
-                <p className="text-xs text-muted-foreground">Hybrid search, page {results.page} of {totalPages}</p>
+                <p className="text-xs text-muted-foreground">
+                  {view === "cards"
+                    ? `${results.results.length.toLocaleString()} loaded`
+                    : `Hybrid search, page ${results.page} of ${totalPages}`}
+                </p>
               </div>
-              <PaginationControls
-                page={page}
-                total={results.total}
-                pageSize={results.pageSize}
-                onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
-                onNext={() => setPage((previous) => previous + 1)}
-              />
+              {view === "table" ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowColumnPicker((current) => !current)}
+                    className="rounded-full"
+                  >
+                    <ListFilter className="size-3.5" />
+                    Columns
+                  </Button>
+                  <PaginationControls
+                    page={page}
+                    total={results.total}
+                    pageSize={results.pageSize}
+                    pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
+                    onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
+                    onNext={() => setPage((previous) => previous + 1)}
+                    onPageSizeChange={(nextSize) => {
+                      setPage(1);
+                      setTablePageSize(nextSize);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  {results.results.length < results.total ? "Scroll to load more" : "All matching cards loaded"}
+                </div>
+              )}
             </div>
+
+            {view === "table" && showColumnPicker ? (
+              <ColumnPicker
+                columns={ALL_TABLE_COLUMNS}
+                selectedColumns={visibleTableColumns}
+                onToggleColumn={toggleTableColumn}
+              />
+            ) : null}
 
             {error ? <ErrorBanner message={error} /> : null}
 
@@ -744,14 +932,18 @@ export function SearchDashboard() {
             ) : results.results.length === 0 ? (
               <EmptyState />
             ) : view === "cards" ? (
-              <ResultsCardGrid
-                results={results.results}
-                returnToPath={returnToPath}
-                selectedTags={tags}
-                selectedIndustries={industries}
-                onToggleTag={addOrToggleTag}
-                onToggleIndustry={addOrToggleIndustry}
-              />
+              <>
+                <ResultsCardGrid
+                  results={results.results}
+                  returnToPath={returnToPath}
+                  selectedTags={tags}
+                  selectedIndustries={industries}
+                  onToggleTag={addOrToggleTag}
+                  onToggleIndustry={addOrToggleIndustry}
+                />
+                <div ref={loadMoreRef} className="h-4" />
+                {loadingMoreCards ? <LoadingState label="Loading more companies..." /> : null}
+              </>
             ) : (
               <ResultsTable
                 results={results.results}
@@ -759,6 +951,7 @@ export function SearchDashboard() {
                 selectedTags={tags}
                 selectedIndustries={industries}
                 sort={sort}
+                visibleColumns={visibleTableColumns}
                 onSortChange={(nextSort) => {
                   setPage(1);
                   setSort(nextSort);
@@ -833,26 +1026,61 @@ export function SearchDashboard() {
                     Keep chart drilldowns and table browsing in one secondary workspace.
                   </p>
                 </div>
-                <PaginationControls
-                  page={page}
-                  total={results.total}
-                  pageSize={results.pageSize}
-                  onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
-                  onNext={() => setPage((previous) => previous + 1)}
-                />
+                {view === "table" ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowColumnPicker((current) => !current)}
+                      className="rounded-full"
+                    >
+                      <ListFilter className="size-3.5" />
+                      Columns
+                    </Button>
+                    <PaginationControls
+                      page={page}
+                      total={results.total}
+                      pageSize={results.pageSize}
+                      pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
+                      onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
+                      onNext={() => setPage((previous) => previous + 1)}
+                      onPageSizeChange={(nextSize) => {
+                        setPage(1);
+                        setTablePageSize(nextSize);
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    {results.results.length.toLocaleString()} of {results.total.toLocaleString()} loaded
+                  </div>
+                )}
               </div>
+
+              {view === "table" && showColumnPicker ? (
+                <ColumnPicker
+                  columns={ALL_TABLE_COLUMNS}
+                  selectedColumns={visibleTableColumns}
+                  onToggleColumn={toggleTableColumn}
+                />
+              ) : null}
 
               {resultsLoading ? (
                 <LoadingState label="Refreshing results..." />
               ) : view === "cards" ? (
-                <ResultsCardGrid
-                  results={results.results}
-                  returnToPath={returnToPath}
-                  selectedTags={tags}
-                  selectedIndustries={industries}
-                  onToggleTag={addOrToggleTag}
-                  onToggleIndustry={addOrToggleIndustry}
-                />
+                <>
+                  <ResultsCardGrid
+                    results={results.results}
+                    returnToPath={returnToPath}
+                    selectedTags={tags}
+                    selectedIndustries={industries}
+                    onToggleTag={addOrToggleTag}
+                    onToggleIndustry={addOrToggleIndustry}
+                  />
+                  <div ref={loadMoreRef} className="h-4" />
+                  {loadingMoreCards ? <LoadingState label="Loading more companies..." /> : null}
+                </>
               ) : (
                 <ResultsTable
                   results={results.results}
@@ -860,6 +1088,7 @@ export function SearchDashboard() {
                   selectedTags={tags}
                   selectedIndustries={industries}
                   sort={sort}
+                  visibleColumns={visibleTableColumns}
                   onSortChange={(nextSort) => {
                     setPage(1);
                     setSort(nextSort);
@@ -1055,17 +1284,35 @@ function PaginationControls({
   page,
   total,
   pageSize,
+  pageSizeOptions,
   onPrev,
   onNext,
+  onPageSizeChange,
 }: {
   page: number;
   total: number;
   pageSize: number;
+  pageSizeOptions: number[];
   onPrev: () => void;
   onNext: () => void;
+  onPageSizeChange: (value: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/70 p-1">
+    <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/70 bg-background/70 p-1">
+      <label className="flex items-center gap-2 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs text-muted-foreground">
+        <span>Rows</span>
+        <select
+          value={pageSize}
+          onChange={(event) => onPageSizeChange(Number(event.target.value))}
+          className="bg-transparent text-foreground outline-none"
+        >
+          {pageSizeOptions.map((option) => (
+            <option key={`page-size-${option}`} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
       <Button type="button" variant="ghost" size="sm" disabled={page <= 1} onClick={onPrev} className="rounded-full">
         Prev
       </Button>
@@ -1083,6 +1330,49 @@ function PaginationControls({
         Next
       </Button>
     </div>
+  );
+}
+
+function ColumnPicker({
+  columns,
+  selectedColumns,
+  onToggleColumn,
+}: {
+  columns: Array<{ key: TableColumnKey; label: string }>;
+  selectedColumns: TableColumnKey[];
+  onToggleColumn: (column: TableColumnKey) => void;
+}) {
+  return (
+    <Card className="border-border/70 bg-card/95">
+      <CardContent className="space-y-3 p-4">
+        <div>
+          <p className="text-sm font-medium">Customize table columns</p>
+          <p className="text-xs text-muted-foreground">
+            Company stays pinned. Toggle whichever metadata columns you want in the table.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {columns.map((column) => {
+            const selected = selectedColumns.includes(column.key);
+            return (
+              <button
+                key={`column-${column.key}`}
+                type="button"
+                onClick={() => onToggleColumn(column.key)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs transition",
+                  selected
+                    ? "border-primary/40 bg-primary/12 text-primary"
+                    : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {column.label}
+              </button>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

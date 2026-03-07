@@ -17,7 +17,7 @@ function parseCsv(value: string | null): string[] {
 export function parseSearchParams(searchParams: URLSearchParams): SearchParams {
   const query = searchParams.get("q") ?? "";
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? 20)));
+  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? 20)));
   const sort = sortSchema.parse(searchParams.get("sort") ?? "relevance");
 
   const filters: SearchFilters = {
