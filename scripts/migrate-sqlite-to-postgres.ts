@@ -73,6 +73,9 @@ type SyncStateRow = {
 };
 
 const DEFAULT_BATCH_SIZE = 500;
+const SECTION_ORDER = ["companies", "website_snapshots", "company_embeddings", "sync_state"] as const;
+
+type ImportSection = (typeof SECTION_ORDER)[number];
 
 function resolveSqliteImportPath() {
   const fromArg = process.argv.find((value) => value.startsWith("--from="))?.split("=")[1];
@@ -84,6 +87,58 @@ function resolveBatchSize() {
   const fromArg = process.argv.find((value) => value.startsWith("--batch-size="))?.split("=")[1];
   const parsed = fromArg ? Number(fromArg) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_BATCH_SIZE;
+}
+
+function isImportSection(value: string): value is ImportSection {
+  return SECTION_ORDER.includes(value as ImportSection);
+}
+
+function resolveSectionSelection() {
+  const fromSectionArg = process.argv
+    .find((value) => value.startsWith("--from-section="))
+    ?.split("=")[1];
+  const onlySectionArg = process.argv
+    .find((value) => value.startsWith("--only-section="))
+    ?.split("=")[1];
+
+  if (fromSectionArg && !isImportSection(fromSectionArg)) {
+    throw new Error(
+      `Invalid --from-section value: ${fromSectionArg}. Expected one of: ${SECTION_ORDER.join(", ")}`,
+    );
+  }
+
+  if (onlySectionArg && !isImportSection(onlySectionArg)) {
+    throw new Error(
+      `Invalid --only-section value: ${onlySectionArg}. Expected one of: ${SECTION_ORDER.join(", ")}`,
+    );
+  }
+
+  if (onlySectionArg) {
+    const onlySection = onlySectionArg as ImportSection;
+    return {
+      fromSection: onlySection,
+      onlySection,
+      enabledSections: new Set<ImportSection>([onlySection]),
+    };
+  }
+
+  if (fromSectionArg) {
+    const fromSection = fromSectionArg as ImportSection;
+    const startIndex = SECTION_ORDER.indexOf(fromSection);
+    return {
+      fromSection,
+      onlySection: null,
+      enabledSections: new Set<ImportSection>(
+        SECTION_ORDER.slice(startIndex) as readonly ImportSection[],
+      ),
+    };
+  }
+
+  return {
+    fromSection: SECTION_ORDER[0],
+    onlySection: null,
+    enabledSections: new Set<ImportSection>([...SECTION_ORDER]),
+  };
 }
 
 function logProgress(section: string, completed: number, total: number, batchSize: number) {
@@ -128,6 +183,7 @@ async function importInBatches<T>(options: {
 async function main() {
   const sqlitePath = resolveSqliteImportPath();
   const batchSize = resolveBatchSize();
+  const sectionSelection = resolveSectionSelection();
   if (!fs.existsSync(sqlitePath)) {
     throw new Error(`SQLite import file not found: ${sqlitePath}`);
   }
@@ -146,6 +202,8 @@ async function main() {
       JSON.stringify({
         sqlitePath,
         batchSize,
+        fromSection: sectionSelection.fromSection,
+        onlySection: sectionSelection.onlySection,
         discovered: {
           companies: companies.length,
           websiteSnapshots: snapshots.length,
@@ -155,234 +213,242 @@ async function main() {
       }),
     );
 
-    await importInBatches({
-      section: "companies",
-      rows: companies,
-      batchSize,
-      importRow: async (row, client) => {
-        await execute(
-          `
-            INSERT INTO companies (
-              id,
-              name,
-              slug,
-              former_names,
-              small_logo_thumb_url,
-              website,
-              all_locations,
-              long_description,
-              one_liner,
-              team_size,
-              highlight_black,
-              highlight_latinx,
-              highlight_women,
-              industry,
-              subindustry,
-              launched_at,
-              tags,
-              top_company,
-              is_hiring,
-              nonprofit,
-              batch,
-              status,
-              industries,
-              regions,
-              stage,
-              app_video_public,
-              demo_day_video_public,
-              question_answers,
-              url,
-              api,
-              search_text,
-              company_hash,
-              needs_scrape,
-              needs_embed,
-              created_at,
-              updated_at
-            ) VALUES (
-              @id,
-              @name,
-              @slug,
-              @former_names,
-              @small_logo_thumb_url,
-              @website,
-              @all_locations,
-              @long_description,
-              @one_liner,
-              @team_size,
-              @highlight_black,
-              @highlight_latinx,
-              @highlight_women,
-              @industry,
-              @subindustry,
-              @launched_at,
-              @tags,
-              @top_company,
-              @is_hiring,
-              @nonprofit,
-              @batch,
-              @status,
-              @industries,
-              @regions,
-              @stage,
-              @app_video_public,
-              @demo_day_video_public,
-              @question_answers,
-              @url,
-              @api,
-              @search_text,
-              @company_hash,
-              @needs_scrape,
-              @needs_embed,
-              COALESCE(@created_at, NOW()::text)::timestamptz,
-              COALESCE(@updated_at, NOW()::text)::timestamptz
-            )
-            ON CONFLICT(id) DO UPDATE SET
-              name = EXCLUDED.name,
-              slug = EXCLUDED.slug,
-              former_names = EXCLUDED.former_names,
-              small_logo_thumb_url = EXCLUDED.small_logo_thumb_url,
-              website = EXCLUDED.website,
-              all_locations = EXCLUDED.all_locations,
-              long_description = EXCLUDED.long_description,
-              one_liner = EXCLUDED.one_liner,
-              team_size = EXCLUDED.team_size,
-              highlight_black = EXCLUDED.highlight_black,
-              highlight_latinx = EXCLUDED.highlight_latinx,
-              highlight_women = EXCLUDED.highlight_women,
-              industry = EXCLUDED.industry,
-              subindustry = EXCLUDED.subindustry,
-              launched_at = EXCLUDED.launched_at,
-              tags = EXCLUDED.tags,
-              top_company = EXCLUDED.top_company,
-              is_hiring = EXCLUDED.is_hiring,
-              nonprofit = EXCLUDED.nonprofit,
-              batch = EXCLUDED.batch,
-              status = EXCLUDED.status,
-              industries = EXCLUDED.industries,
-              regions = EXCLUDED.regions,
-              stage = EXCLUDED.stage,
-              app_video_public = EXCLUDED.app_video_public,
-              demo_day_video_public = EXCLUDED.demo_day_video_public,
-              question_answers = EXCLUDED.question_answers,
-              url = EXCLUDED.url,
-              api = EXCLUDED.api,
-              search_text = EXCLUDED.search_text,
-              company_hash = EXCLUDED.company_hash,
-              needs_scrape = EXCLUDED.needs_scrape,
-              needs_embed = EXCLUDED.needs_embed,
-              created_at = EXCLUDED.created_at,
-              updated_at = EXCLUDED.updated_at
-          `,
-          row,
-          client,
-        );
-      },
-    });
+    if (sectionSelection.enabledSections.has("companies")) {
+      await importInBatches({
+        section: "companies",
+        rows: companies,
+        batchSize,
+        importRow: async (row, client) => {
+          await execute(
+            `
+              INSERT INTO companies (
+                id,
+                name,
+                slug,
+                former_names,
+                small_logo_thumb_url,
+                website,
+                all_locations,
+                long_description,
+                one_liner,
+                team_size,
+                highlight_black,
+                highlight_latinx,
+                highlight_women,
+                industry,
+                subindustry,
+                launched_at,
+                tags,
+                top_company,
+                is_hiring,
+                nonprofit,
+                batch,
+                status,
+                industries,
+                regions,
+                stage,
+                app_video_public,
+                demo_day_video_public,
+                question_answers,
+                url,
+                api,
+                search_text,
+                company_hash,
+                needs_scrape,
+                needs_embed,
+                created_at,
+                updated_at
+              ) VALUES (
+                @id,
+                @name,
+                @slug,
+                @former_names,
+                @small_logo_thumb_url,
+                @website,
+                @all_locations,
+                @long_description,
+                @one_liner,
+                @team_size,
+                @highlight_black,
+                @highlight_latinx,
+                @highlight_women,
+                @industry,
+                @subindustry,
+                @launched_at,
+                @tags,
+                @top_company,
+                @is_hiring,
+                @nonprofit,
+                @batch,
+                @status,
+                @industries,
+                @regions,
+                @stage,
+                @app_video_public,
+                @demo_day_video_public,
+                @question_answers,
+                @url,
+                @api,
+                @search_text,
+                @company_hash,
+                @needs_scrape,
+                @needs_embed,
+                COALESCE(@created_at, NOW()::text)::timestamptz,
+                COALESCE(@updated_at, NOW()::text)::timestamptz
+              )
+              ON CONFLICT(id) DO UPDATE SET
+                name = EXCLUDED.name,
+                slug = EXCLUDED.slug,
+                former_names = EXCLUDED.former_names,
+                small_logo_thumb_url = EXCLUDED.small_logo_thumb_url,
+                website = EXCLUDED.website,
+                all_locations = EXCLUDED.all_locations,
+                long_description = EXCLUDED.long_description,
+                one_liner = EXCLUDED.one_liner,
+                team_size = EXCLUDED.team_size,
+                highlight_black = EXCLUDED.highlight_black,
+                highlight_latinx = EXCLUDED.highlight_latinx,
+                highlight_women = EXCLUDED.highlight_women,
+                industry = EXCLUDED.industry,
+                subindustry = EXCLUDED.subindustry,
+                launched_at = EXCLUDED.launched_at,
+                tags = EXCLUDED.tags,
+                top_company = EXCLUDED.top_company,
+                is_hiring = EXCLUDED.is_hiring,
+                nonprofit = EXCLUDED.nonprofit,
+                batch = EXCLUDED.batch,
+                status = EXCLUDED.status,
+                industries = EXCLUDED.industries,
+                regions = EXCLUDED.regions,
+                stage = EXCLUDED.stage,
+                app_video_public = EXCLUDED.app_video_public,
+                demo_day_video_public = EXCLUDED.demo_day_video_public,
+                question_answers = EXCLUDED.question_answers,
+                url = EXCLUDED.url,
+                api = EXCLUDED.api,
+                search_text = EXCLUDED.search_text,
+                company_hash = EXCLUDED.company_hash,
+                needs_scrape = EXCLUDED.needs_scrape,
+                needs_embed = EXCLUDED.needs_embed,
+                created_at = EXCLUDED.created_at,
+                updated_at = EXCLUDED.updated_at
+            `,
+            row,
+            client,
+          );
+        },
+      });
+    }
 
-    await importInBatches({
-      section: "website_snapshots",
-      rows: snapshots,
-      batchSize,
-      importRow: async (row, client) => {
-        await execute(
-          `
-            INSERT INTO website_snapshots (
-              company_id,
-              source,
-              website_url,
-              content_markdown,
-              content_hash,
-              error,
-              scraped_at,
-              updated_at
-            ) VALUES (
-              @company_id,
-              @source,
-              @website_url,
-              @content_markdown,
-              @content_hash,
-              @error,
-              COALESCE(@scraped_at, NOW()::text)::timestamptz,
-              COALESCE(@updated_at, NOW()::text)::timestamptz
-            )
-            ON CONFLICT(company_id, source) DO UPDATE SET
-              website_url = EXCLUDED.website_url,
-              content_markdown = EXCLUDED.content_markdown,
-              content_hash = EXCLUDED.content_hash,
-              error = EXCLUDED.error,
-              scraped_at = EXCLUDED.scraped_at,
-              updated_at = EXCLUDED.updated_at
-          `,
-          {
-            ...row,
-            source: row.source || "crawl4ai",
-          },
-          client,
-        );
-      },
-    });
+    if (sectionSelection.enabledSections.has("website_snapshots")) {
+      await importInBatches({
+        section: "website_snapshots",
+        rows: snapshots,
+        batchSize,
+        importRow: async (row, client) => {
+          await execute(
+            `
+              INSERT INTO website_snapshots (
+                company_id,
+                source,
+                website_url,
+                content_markdown,
+                content_hash,
+                error,
+                scraped_at,
+                updated_at
+              ) VALUES (
+                @company_id,
+                @source,
+                @website_url,
+                @content_markdown,
+                @content_hash,
+                @error,
+                COALESCE(@scraped_at, NOW()::text)::timestamptz,
+                COALESCE(@updated_at, NOW()::text)::timestamptz
+              )
+              ON CONFLICT(company_id, source) DO UPDATE SET
+                website_url = EXCLUDED.website_url,
+                content_markdown = EXCLUDED.content_markdown,
+                content_hash = EXCLUDED.content_hash,
+                error = EXCLUDED.error,
+                scraped_at = EXCLUDED.scraped_at,
+                updated_at = EXCLUDED.updated_at
+            `,
+            {
+              ...row,
+              source: row.source || "crawl4ai",
+            },
+            client,
+          );
+        },
+      });
+    }
 
-    await importInBatches({
-      section: "company_embeddings",
-      rows: embeddings,
-      batchSize,
-      importRow: async (row, client) => {
-        await execute(
-          `
-            INSERT INTO company_embeddings (
-              company_id,
-              model,
-              dimensions,
-              vector,
-              source_hash,
-              embedded_at,
-              updated_at
-            ) VALUES (
-              @company_id,
-              @model,
-              @dimensions,
-              @vector,
-              @source_hash,
-              COALESCE(@embedded_at, NOW()::text)::timestamptz,
-              COALESCE(@updated_at, NOW()::text)::timestamptz
-            )
-            ON CONFLICT(company_id) DO UPDATE SET
-              model = EXCLUDED.model,
-              dimensions = EXCLUDED.dimensions,
-              vector = EXCLUDED.vector,
-              source_hash = EXCLUDED.source_hash,
-              embedded_at = EXCLUDED.embedded_at,
-              updated_at = EXCLUDED.updated_at
-          `,
-          row,
-          client,
-        );
-      },
-    });
+    if (sectionSelection.enabledSections.has("company_embeddings")) {
+      await importInBatches({
+        section: "company_embeddings",
+        rows: embeddings,
+        batchSize,
+        importRow: async (row, client) => {
+          await execute(
+            `
+              INSERT INTO company_embeddings (
+                company_id,
+                model,
+                dimensions,
+                vector,
+                source_hash,
+                embedded_at,
+                updated_at
+              ) VALUES (
+                @company_id,
+                @model,
+                @dimensions,
+                @vector,
+                @source_hash,
+                COALESCE(@embedded_at, NOW()::text)::timestamptz,
+                COALESCE(@updated_at, NOW()::text)::timestamptz
+              )
+              ON CONFLICT(company_id) DO UPDATE SET
+                model = EXCLUDED.model,
+                dimensions = EXCLUDED.dimensions,
+                vector = EXCLUDED.vector,
+                source_hash = EXCLUDED.source_hash,
+                embedded_at = EXCLUDED.embedded_at,
+                updated_at = EXCLUDED.updated_at
+            `,
+            row,
+            client,
+          );
+        },
+      });
+    }
 
-    await importInBatches({
-      section: "sync_state",
-      rows: syncStates,
-      batchSize,
-      importRow: async (row, client) => {
-        await execute(
-          `
-            INSERT INTO sync_state (key, value, updated_at)
-            VALUES (
-              @key,
-              @value,
-              COALESCE(@updated_at, NOW()::text)::timestamptz
-            )
-            ON CONFLICT(key) DO UPDATE SET
-              value = EXCLUDED.value,
-              updated_at = EXCLUDED.updated_at
-          `,
-          row,
-          client,
-        );
-      },
-    });
+    if (sectionSelection.enabledSections.has("sync_state")) {
+      await importInBatches({
+        section: "sync_state",
+        rows: syncStates,
+        batchSize,
+        importRow: async (row, client) => {
+          await execute(
+            `
+              INSERT INTO sync_state (key, value, updated_at)
+              VALUES (
+                @key,
+                @value,
+                COALESCE(@updated_at, NOW()::text)::timestamptz
+              )
+              ON CONFLICT(key) DO UPDATE SET
+                value = EXCLUDED.value,
+                updated_at = EXCLUDED.updated_at
+            `,
+            row,
+            client,
+          );
+        },
+      });
+    }
 
     console.log(
       JSON.stringify(
