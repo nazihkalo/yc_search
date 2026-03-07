@@ -72,14 +72,62 @@ type SyncStateRow = {
   updated_at: string | null;
 };
 
+const DEFAULT_BATCH_SIZE = 500;
+
 function resolveSqliteImportPath() {
   const fromArg = process.argv.find((value) => value.startsWith("--from="))?.split("=")[1];
   const rawPath = fromArg || getSqliteImportPath();
   return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
 }
 
+function resolveBatchSize() {
+  const fromArg = process.argv.find((value) => value.startsWith("--batch-size="))?.split("=")[1];
+  const parsed = fromArg ? Number(fromArg) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_BATCH_SIZE;
+}
+
+function logProgress(section: string, completed: number, total: number, batchSize: number) {
+  console.log(
+    JSON.stringify({
+      section,
+      completed,
+      total,
+      remaining: Math.max(0, total - completed),
+      batchSize,
+      percent: total > 0 ? Number(((completed / total) * 100).toFixed(2)) : 100,
+    }),
+  );
+}
+
+async function importInBatches<T>(options: {
+  section: string;
+  rows: T[];
+  batchSize: number;
+  importRow: (row: T, client: Parameters<Parameters<typeof withTransaction>[0]>[0]) => Promise<void>;
+}) {
+  const { section, rows, batchSize, importRow } = options;
+
+  if (rows.length === 0) {
+    logProgress(section, 0, 0, batchSize);
+    return;
+  }
+
+  for (let start = 0; start < rows.length; start += batchSize) {
+    const batch = rows.slice(start, start + batchSize);
+
+    await withTransaction(async (client) => {
+      for (const row of batch) {
+        await importRow(row, client);
+      }
+    });
+
+    logProgress(section, Math.min(start + batch.length, rows.length), rows.length, batchSize);
+  }
+}
+
 async function main() {
   const sqlitePath = resolveSqliteImportPath();
+  const batchSize = resolveBatchSize();
   if (!fs.existsSync(sqlitePath)) {
     throw new Error(`SQLite import file not found: ${sqlitePath}`);
   }
@@ -94,8 +142,24 @@ async function main() {
     const embeddings = sqlite.prepare<[], EmbeddingRow>("SELECT * FROM company_embeddings").all();
     const syncStates = sqlite.prepare<[], SyncStateRow>("SELECT * FROM sync_state").all();
 
-    await withTransaction(async (client) => {
-      for (const row of companies) {
+    console.log(
+      JSON.stringify({
+        sqlitePath,
+        batchSize,
+        discovered: {
+          companies: companies.length,
+          websiteSnapshots: snapshots.length,
+          companyEmbeddings: embeddings.length,
+          syncStates: syncStates.length,
+        },
+      }),
+    );
+
+    await importInBatches({
+      section: "companies",
+      rows: companies,
+      batchSize,
+      importRow: async (row, client) => {
         await execute(
           `
             INSERT INTO companies (
@@ -213,9 +277,14 @@ async function main() {
           row,
           client,
         );
-      }
+      },
+    });
 
-      for (const row of snapshots) {
+    await importInBatches({
+      section: "website_snapshots",
+      rows: snapshots,
+      batchSize,
+      importRow: async (row, client) => {
         await execute(
           `
             INSERT INTO website_snapshots (
@@ -251,9 +320,14 @@ async function main() {
           },
           client,
         );
-      }
+      },
+    });
 
-      for (const row of embeddings) {
+    await importInBatches({
+      section: "company_embeddings",
+      rows: embeddings,
+      batchSize,
+      importRow: async (row, client) => {
         await execute(
           `
             INSERT INTO company_embeddings (
@@ -284,9 +358,14 @@ async function main() {
           row,
           client,
         );
-      }
+      },
+    });
 
-      for (const row of syncStates) {
+    await importInBatches({
+      section: "sync_state",
+      rows: syncStates,
+      batchSize,
+      importRow: async (row, client) => {
         await execute(
           `
             INSERT INTO sync_state (key, value, updated_at)
@@ -302,13 +381,14 @@ async function main() {
           row,
           client,
         );
-      }
+      },
     });
 
     console.log(
       JSON.stringify(
         {
           sqlitePath,
+          batchSize,
           imported: {
             companies: companies.length,
             websiteSnapshots: snapshots.length,
