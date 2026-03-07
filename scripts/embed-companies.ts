@@ -6,6 +6,7 @@ import { closeDb, execute, initializeDatabase, query, queryOne } from "../lib/db
 import { sha256 } from "../lib/hash";
 import { EMBEDDING_MODEL, getOpenAiClient } from "../lib/openai";
 import { ACTIVE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
+import { toVectorLiteral } from "../lib/vector-utils";
 
 type EmbedCandidate = {
   id: number;
@@ -165,7 +166,7 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
           company_id: candidate.id,
           model: EMBEDDING_MODEL,
           dimensions: vector.length,
-          vector: JSON.stringify(vector),
+          vector: toVectorLiteral(vector),
           source_hash: sourceHash,
         });
         await execute(`

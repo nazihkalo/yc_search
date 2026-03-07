@@ -1,4 +1,5 @@
-import { parseJsonArray, query, queryOne } from "./db";
+import { isPgVectorReady, parseJsonArray, query, queryOne } from "./db";
+import { parseVectorString } from "./vector-utils";
 
 type CompanyDetailRow = {
   id: number;
@@ -54,7 +55,7 @@ type SimilarCandidateRow = {
   small_logo_thumb_url: string | null;
   website: string | null;
   url: string | null;
-  vector: string;
+  similarity: number;
 };
 
 function cosineSimilarity(a: number[], b: number[]) {
@@ -162,7 +163,49 @@ export async function getSimilarCompanies(companyId: number, limit = 8) {
     return [];
   }
 
-  const targetVector = JSON.parse(target.vector) as number[];
+  if (!(await isPgVectorReady())) {
+    const targetVector = parseVectorString(target.vector);
+    const candidates = await query<SimilarCandidateRow & { vector: string }>(`
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.one_liner,
+        c.industry,
+        c.batch,
+        c.stage,
+        c.small_logo_thumb_url,
+        c.website,
+        c.url,
+        e.vector,
+        0::float AS similarity
+      FROM companies c
+      INNER JOIN company_embeddings e ON e.company_id = c.id
+      WHERE c.id != @id
+    `, { id: companyId });
+
+    return candidates
+      .map((candidate) => ({
+        ...candidate,
+        similarity: cosineSimilarity(targetVector, parseVectorString(candidate.vector)),
+      }))
+      .sort((left, right) => right.similarity - left.similarity)
+      .slice(0, limit)
+      .map((candidate) => ({
+        id: candidate.id,
+        name: candidate.name,
+        slug: candidate.slug,
+        one_liner: candidate.one_liner,
+        industry: candidate.industry,
+        batch: candidate.batch,
+        stage: candidate.stage,
+        small_logo_thumb_url: candidate.small_logo_thumb_url,
+        website: candidate.website,
+        url: candidate.url,
+        similarity: Number(candidate.similarity.toFixed(4)),
+      }));
+  }
+
   const candidates = await query<SimilarCandidateRow>(`
       SELECT
         c.id,
@@ -175,19 +218,19 @@ export async function getSimilarCompanies(companyId: number, limit = 8) {
         c.small_logo_thumb_url,
         c.website,
         c.url,
-        e.vector
+        1 - (e.vector <=> @target_vector::vector(1536)) AS similarity
       FROM companies c
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE c.id != @id
-    `, { id: companyId });
+      ORDER BY e.vector <=> @target_vector::vector(1536), c.top_company DESC, c.name ASC
+      LIMIT @limit
+    `, {
+    id: companyId,
+    target_vector: target.vector,
+    limit,
+  });
 
   return candidates
-    .map((candidate) => ({
-      ...candidate,
-      similarity: cosineSimilarity(targetVector, JSON.parse(candidate.vector) as number[]),
-    }))
-    .sort((left, right) => right.similarity - left.similarity)
-    .slice(0, limit)
     .map((candidate) => ({
       id: candidate.id,
       name: candidate.name,

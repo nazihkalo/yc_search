@@ -9,6 +9,7 @@ type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 
 let dbInstance: Pool | null = null;
 let initialized = false;
+let pgvectorReady: boolean | null = null;
 
 function compileNamedQuery(text: string, params: QueryParams) {
   const values: QueryValue[] = [];
@@ -81,6 +82,34 @@ export async function initializeDatabase() {
   initialized = true;
 }
 
+export async function isPgVectorReady() {
+  if (pgvectorReady !== null) {
+    return pgvectorReady;
+  }
+
+  const db = getDb();
+  const result = await db.query<{ installed: boolean; embeddings_udt: string | null; queries_udt: string | null }>(`
+    SELECT
+      EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector') AS installed,
+      (
+        SELECT udt_name
+        FROM information_schema.columns
+        WHERE table_name = 'company_embeddings' AND column_name = 'vector'
+        LIMIT 1
+      ) AS embeddings_udt,
+      (
+        SELECT udt_name
+        FROM information_schema.columns
+        WHERE table_name = 'query_embeddings' AND column_name = 'vector'
+        LIMIT 1
+      ) AS queries_udt
+  `);
+
+  const row = result.rows[0];
+  pgvectorReady = Boolean(row?.installed) && row?.embeddings_udt === "vector" && row?.queries_udt === "vector";
+  return pgvectorReady;
+}
+
 export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>) {
   const client = await getDb().connect();
   try {
@@ -126,6 +155,7 @@ export async function closeDb() {
   await dbInstance.end();
   dbInstance = null;
   initialized = false;
+  pgvectorReady = null;
 }
 
 export function parseJsonArray(value: unknown): string[] {

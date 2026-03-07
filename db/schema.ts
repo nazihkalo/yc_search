@@ -62,6 +62,16 @@ CREATE TABLE IF NOT EXISTS company_embeddings (
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS query_embeddings (
+  query_hash TEXT PRIMARY KEY,
+  query_text TEXT NOT NULL,
+  model TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  vector TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sync_state (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -102,6 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_companies_needs_embed ON companies(needs_embed);
 CREATE INDEX IF NOT EXISTS idx_snapshots_company_id ON website_snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_content_hash ON website_snapshots(content_hash);
 CREATE INDEX IF NOT EXISTS idx_embeddings_source_hash ON company_embeddings(source_hash);
+CREATE INDEX IF NOT EXISTS idx_query_embeddings_updated_at ON query_embeddings(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_status ON sync_runs(status);
 `;

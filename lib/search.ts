@@ -1,8 +1,15 @@
-import { parseJsonArray, query, queryOne } from "./db";
+import { execute, isPgVectorReady, parseJsonArray, query, queryOne } from "./db";
 import { EMBEDDING_MODEL, getOpenAiClient } from "./openai";
 import { buildCompanyLinks } from "./company-links";
+import { sha256 } from "./hash";
 import { extractDescriptionFromMarkdown } from "./snapshot-utils";
 import type { CompanyRecord } from "./types";
+import {
+  EMBEDDING_DIMENSIONS,
+  normalizeQueryEmbeddingInput,
+  parseVectorString,
+  toVectorLiteral,
+} from "./vector-utils";
 
 export type SearchFilters = {
   tags: string[];
@@ -258,33 +265,37 @@ function buildFilterOnlySql(filters: SearchFilters) {
   };
 }
 
-function cosineSimilarity(a: number[], b: number[]) {
-  if (a.length !== b.length || a.length === 0) {
-    return 0;
+function buildSemanticSortClause(sort: SearchParams["sort"]) {
+  if (sort === "newest") {
+    return "ORDER BY e.vector <=> @query_vector::vector(1536), c.launched_at DESC NULLS LAST, c.top_company DESC, c.name ASC";
   }
-
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-
-  for (let i = 0; i < a.length; i += 1) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+  if (sort === "team_size") {
+    return "ORDER BY e.vector <=> @query_vector::vector(1536), c.team_size DESC NULLS LAST, c.top_company DESC, c.name ASC";
   }
-
-  if (!normA || !normB) {
-    return 0;
+  if (sort === "name") {
+    return "ORDER BY e.vector <=> @query_vector::vector(1536), c.name ASC";
   }
-
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  return "ORDER BY e.vector <=> @query_vector::vector(1536), c.top_company DESC, c.team_size DESC NULLS LAST, c.name ASC";
 }
 
-export async function semanticSearch(params: SearchParams) {
-  const searchQuery = params.query.trim();
-  if (!searchQuery) {
-    // Keep default semantic view behavior aligned with keyword mode.
-    return keywordSearch(params);
+async function getOrCreateQueryEmbedding(searchQuery: string) {
+  const normalizedQuery = normalizeQueryEmbeddingInput(searchQuery);
+  const queryHash = sha256(`${EMBEDDING_MODEL}:${normalizedQuery}`);
+  const cached = await queryOne<{ vector: string }>(
+    `
+      SELECT vector
+      FROM query_embeddings
+      WHERE query_hash = @query_hash AND model = @model
+      LIMIT 1
+    `,
+    {
+      query_hash: queryHash,
+      model: EMBEDDING_MODEL,
+    },
+  );
+
+  if (cached?.vector) {
+    return cached.vector;
   }
 
   const openai = getOpenAiClient();
@@ -293,7 +304,47 @@ export async function semanticSearch(params: SearchParams) {
     input: searchQuery,
   });
   const queryVector = embeddingResponse.data[0]?.embedding ?? [];
+  const vectorLiteral = toVectorLiteral(queryVector);
 
+  await execute(
+    `
+      INSERT INTO query_embeddings (
+        query_hash,
+        query_text,
+        model,
+        dimensions,
+        vector,
+        created_at,
+        updated_at
+      ) VALUES (
+        @query_hash,
+        @query_text,
+        @model,
+        @dimensions,
+        @vector,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT(query_hash) DO UPDATE SET
+        query_text = EXCLUDED.query_text,
+        model = EXCLUDED.model,
+        dimensions = EXCLUDED.dimensions,
+        vector = EXCLUDED.vector,
+        updated_at = NOW()
+    `,
+    {
+      query_hash: queryHash,
+      query_text: normalizedQuery,
+      model: EMBEDDING_MODEL,
+      dimensions: queryVector.length || EMBEDDING_DIMENSIONS,
+      vector: vectorLiteral,
+    },
+  );
+
+  return vectorLiteral;
+}
+
+async function semanticSearchLegacy(params: SearchParams, queryVectorLiteral: string) {
   const whereClauses = ["1=1"];
   const queryParams: Record<string, string | number> = {};
   buildFilterWhereClause(params.filters, queryParams, whereClauses);
@@ -331,21 +382,27 @@ export async function semanticSearch(params: SearchParams) {
       WHERE ${whereClauses.join(" AND ")}
     `, queryParams);
 
+  const queryVector = parseVectorString(queryVectorLiteral);
   const scored = rows
-    .map((row: SearchResultRow & { vector: string }) => {
-      const vector = JSON.parse(row.vector) as number[];
-      const score = cosineSimilarity(queryVector, vector);
-      return {
-        ...row,
-        score,
-      };
+    .map((row) => {
+      const vector = parseVectorString(row.vector);
+      if (vector.length !== queryVector.length || vector.length === 0) {
+        return { ...row, score: 0 };
+      }
+
+      let dot = 0;
+      let normA = 0;
+      let normB = 0;
+      for (let i = 0; i < vector.length; i += 1) {
+        dot += queryVector[i] * vector[i];
+        normA += queryVector[i] * queryVector[i];
+        normB += vector[i] * vector[i];
+      }
+
+      const score = !normA || !normB ? 0 : dot / (Math.sqrt(normA) * Math.sqrt(normB));
+      return { ...row, score };
     })
-    .sort(
-      (
-        left: SearchResultRow & { vector: string; score: number },
-        right: SearchResultRow & { vector: string; score: number },
-      ) => right.score - left.score,
-    );
+    .sort((left, right) => right.score - left.score);
 
   const start = (params.page - 1) * params.pageSize;
   const paged = scored.slice(start, start + params.pageSize);
@@ -361,35 +418,136 @@ export async function semanticSearch(params: SearchParams) {
   };
 }
 
+export async function semanticSearch(params: SearchParams) {
+  const searchQuery = params.query.trim();
+  if (!searchQuery) {
+    // Keep default semantic view behavior aligned with keyword mode.
+    return keywordSearch(params);
+  }
+
+  const queryVectorLiteral = await getOrCreateQueryEmbedding(searchQuery);
+  if (!(await isPgVectorReady())) {
+    return semanticSearchLegacy(params, queryVectorLiteral);
+  }
+
+  const whereClauses = ["1=1"];
+  const queryParams: Record<string, string | number> = {};
+  buildFilterWhereClause(params.filters, queryParams, whereClauses);
+  queryParams.query_vector = queryVectorLiteral;
+  queryParams.limit = params.pageSize;
+  queryParams.offset = (params.page - 1) * params.pageSize;
+
+  const countRow = await queryOne<{ total: string | number }>(
+    `
+      SELECT COUNT(*) AS total
+      FROM companies c
+      INNER JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${whereClauses.join(" AND ")}
+    `,
+    queryParams,
+  );
+
+  const rows = await query<SearchResultRow & { score: number }>(`
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.website,
+        c.one_liner,
+        c.long_description,
+        c.batch,
+        c.stage,
+        c.industry,
+        c.all_locations,
+        c.launched_at,
+        c.team_size,
+        c.is_hiring,
+        c.nonprofit,
+        c.top_company,
+        c.tags,
+        c.industries,
+        c.regions,
+        c.url,
+        c.small_logo_thumb_url,
+        c.status,
+        s.content_markdown,
+        s.website_url,
+        1 - (e.vector <=> @query_vector::vector(1536)) AS score
+      FROM companies c
+      LEFT JOIN website_snapshots s
+        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      INNER JOIN company_embeddings e ON e.company_id = c.id
+      WHERE ${whereClauses.join(" AND ")}
+      ${buildSemanticSortClause(params.sort)}
+      LIMIT @limit OFFSET @offset
+    `, queryParams);
+
+  return {
+    total: Number(countRow?.total ?? 0),
+    page: params.page,
+    pageSize: params.pageSize,
+    results: hydrateResultRows(rows).map((row, index) => ({
+      ...row,
+      score: Number(rows[index]?.score.toFixed(4) ?? 0),
+    })),
+  };
+}
+
 export async function getSemanticTopCompanyIds(params: SearchParams, limit = 100) {
   const searchQuery = params.query.trim();
   if (!searchQuery) {
     return [];
   }
 
+  const queryVectorLiteral = await getOrCreateQueryEmbedding(searchQuery);
   const { whereSql, queryParams } = buildFilterOnlySql(params.filters);
-  const openai = getOpenAiClient();
-  const embeddingResponse = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: searchQuery,
-  });
-  const queryVector = embeddingResponse.data[0]?.embedding ?? [];
 
-  const rows = await query<{ id: number; vector: string }>(`
-      SELECT c.id, e.vector
+  if (!(await isPgVectorReady())) {
+    const rows = await query<{ id: number; vector: string }>(`
+        SELECT c.id, e.vector
+        FROM companies c
+        INNER JOIN company_embeddings e ON e.company_id = c.id
+        WHERE ${whereSql}
+      `, queryParams);
+
+    const queryVector = parseVectorString(queryVectorLiteral);
+    return rows
+      .map((row) => {
+        const vector = parseVectorString(row.vector);
+        if (vector.length !== queryVector.length || vector.length === 0) {
+          return { id: row.id, score: 0 };
+        }
+
+        let dot = 0;
+        let normA = 0;
+        let normB = 0;
+        for (let i = 0; i < vector.length; i += 1) {
+          dot += queryVector[i] * vector[i];
+          normA += queryVector[i] * queryVector[i];
+          normB += vector[i] * vector[i];
+        }
+
+        const score = !normA || !normB ? 0 : dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        return { id: row.id, score };
+      })
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map((row) => row.id);
+  }
+
+  queryParams.query_vector = queryVectorLiteral;
+  queryParams.limit = limit;
+
+  const rows = await query<{ id: number }>(`
+      SELECT c.id
       FROM companies c
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereSql}
+      ORDER BY e.vector <=> @query_vector::vector(1536), c.top_company DESC, c.name ASC
+      LIMIT @limit
     `, queryParams);
 
-  return rows
-    .map((row) => ({
-      id: row.id,
-      score: cosineSimilarity(queryVector, JSON.parse(row.vector) as number[]),
-    }))
-    .sort((left, right) => right.score - left.score)
-    .slice(0, limit)
-    .map((row) => row.id);
+  return rows.map((row) => row.id);
 }
 
 type ChatContextRow = {

@@ -1,5 +1,6 @@
 import { query, queryOne } from "./db";
 import { getSimilarCompanies } from "./company-details";
+import { parseVectorString } from "./vector-utils";
 
 type EmbeddingRow = {
   id: number;
@@ -110,14 +111,10 @@ function parseEmbeddingRows(rows: EmbeddingRow[]) {
   const labels: Array<{ id: number; name: string }> = [];
 
   for (const row of rows) {
-    try {
-      const vector = JSON.parse(row.vector) as number[];
-      if (Array.isArray(vector) && vector.length > 1) {
-        vectors.push(vector);
-        labels.push({ id: row.id, name: row.name });
-      }
-    } catch {
-      // Skip malformed vectors.
+    const vector = parseVectorString(row.vector);
+    if (vector.length > 1) {
+      vectors.push(vector);
+      labels.push({ id: row.id, name: row.name });
     }
   }
 
