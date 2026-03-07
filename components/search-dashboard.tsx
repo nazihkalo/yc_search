@@ -5,18 +5,14 @@ import Image from "next/image";
 import {
   Brain,
   LayoutGrid,
-  Layers3,
-  ListFilter,
-  RefreshCcw,
   Search,
-  SlidersHorizontal,
   TableProperties,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
-import { ResultsTable } from "./dashboard/results-table";
+import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
 import type {
   AnalyticsResponse,
   ChatResponse,
@@ -29,14 +25,12 @@ import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
-import { Switch } from "./ui/switch";
 import { cn } from "../lib/utils";
 
 type AnalyticsColorBy = "none" | "tags" | "industries";
 type ResultsView = "cards" | "table";
 type SortOption = "relevance" | "newest" | "team_size" | "name";
 type DashboardTab = "results" | "analytics";
-type CohortGranularity = "year" | "batch";
 
 const QUERY_EXAMPLES = [
   "B2B SaaS companies in healthcare",
@@ -70,6 +64,7 @@ const ALL_TABLE_COLUMNS: Array<{ key: TableColumnKey; label: string }> = [
   { key: "location", label: "Location" },
   { key: "launched_year", label: "Launched year" },
 ];
+const SEARCH_CACHE_PREFIX = "yc-search:results:";
 
 function parseCsv(value: string | null) {
   if (!value) {
@@ -113,39 +108,33 @@ function pickTopFacets<T extends string | number>(items: FacetItem<T>[], count =
   return items.slice(0, count);
 }
 
-function parseBatchYear(batch: string) {
-  const compactBatchMatch = batch.match(/^([WSF])(\d{2})$/i);
-  if (compactBatchMatch) {
-    return 2000 + Number(compactBatchMatch[2]);
+function getCachedSearchResponse(cacheKey: string) {
+  if (typeof window === "undefined") {
+    return null;
   }
 
-  const namedBatchMatch = batch.match(/^(Winter|Spring|Summer|Fall)\s+(\d{4})$/i);
-  if (namedBatchMatch) {
-    return Number(namedBatchMatch[2]);
-  }
+  try {
+    const raw = window.sessionStorage.getItem(`${SEARCH_CACHE_PREFIX}${cacheKey}`);
+    if (!raw) {
+      return null;
+    }
 
-  return null;
+    return JSON.parse(raw) as SearchResponse;
+  } catch {
+    return null;
+  }
 }
 
-function groupBatchFacets(items: FacetItem<string>[]) {
-  const grouped = new Map<number | null, FacetItem<string>[]>();
-
-  for (const item of items) {
-    const year = parseBatchYear(item.value);
-    grouped.set(year, [...(grouped.get(year) ?? []), item]);
+function setCachedSearchResponse(cacheKey: string, payload: SearchResponse) {
+  if (typeof window === "undefined") {
+    return;
   }
 
-  return [...grouped.entries()]
-    .sort((left, right) => {
-      const leftYear = left[0] ?? Number.NEGATIVE_INFINITY;
-      const rightYear = right[0] ?? Number.NEGATIVE_INFINITY;
-      return rightYear - leftYear;
-    })
-    .map(([year, batches]) => ({
-      year,
-      label: year ? String(year) : "Other",
-      batches,
-    }));
+  try {
+    window.sessionStorage.setItem(`${SEARCH_CACHE_PREFIX}${cacheKey}`, JSON.stringify(payload));
+  } catch {
+    // Ignore quota/cache failures.
+  }
 }
 
 export function SearchDashboard() {
@@ -156,9 +145,6 @@ export function SearchDashboard() {
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [sort, setSort] = useState<SortOption>((searchParams.get("sort") as SortOption) ?? "relevance");
   const [view, setView] = useState<ResultsView>((searchParams.get("view") as ResultsView) ?? "table");
-  const [cohortGranularity, setCohortGranularity] = useState<CohortGranularity>(
-    searchParams.get("cohort") === "batch" ? "batch" : "year",
-  );
   const [tags, setTags] = useState<string[]>(parseCsv(searchParams.get("tags")));
   const [industries, setIndustries] = useState<string[]>(parseCsv(searchParams.get("industries")));
   const [batches, setBatches] = useState<string[]>(parseCsv(searchParams.get("batches")));
@@ -176,8 +162,6 @@ export function SearchDashboard() {
   const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
     (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
@@ -196,14 +180,12 @@ export function SearchDashboard() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatResponse, setChatResponse] = useState<ChatResponse | null>(null);
-  const [facetsLoading, setFacetsLoading] = useState(true);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [loadingMoreCards, setLoadingMoreCards] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setFacetsLoading(true);
     fetch("/api/facets")
       .then((response) => response.json())
       .then((payload) => {
@@ -213,8 +195,7 @@ export function SearchDashboard() {
       .catch((fetchError) => {
         const message = fetchError instanceof Error ? fetchError.message : "Could not load facets";
         setError(message);
-      })
-      .finally(() => setFacetsLoading(false));
+      });
   }, []);
 
   useEffect(() => {
@@ -229,19 +210,12 @@ export function SearchDashboard() {
     return () => window.clearInterval(interval);
   }, [query]);
 
-  useEffect(() => {
-    if (view !== "table") {
-      setShowColumnPicker(false);
-    }
-  }, [view]);
-
   const baseQueryString = useMemo(() => {
     const params = new URLSearchParams();
     params.set("tab", activeTab);
     params.set("sort", sort);
     params.set("view", view);
     params.set("colorBy", analyticsColorBy);
-    params.set("cohort", cohortGranularity);
     params.set("columns", arrayToCsv(visibleTableColumns));
     if (query.trim()) {
       params.set("q", query.trim());
@@ -278,7 +252,6 @@ export function SearchDashboard() {
     activeTab,
     analyticsColorBy,
     batches,
-    cohortGranularity,
     industries,
     isHiring,
     nonprofit,
@@ -317,6 +290,11 @@ export function SearchDashboard() {
     setLoadingMoreCards(false);
 
     const queryString = view === "cards" ? cardQueryString : tableQueryString;
+    const cached = view === "table" ? getCachedSearchResponse(queryString) : null;
+    if (cached) {
+      setResults(cached);
+      setError(null);
+    }
 
     fetch(`/api/search?${queryString}`)
       .then((response) => response.json())
@@ -326,6 +304,9 @@ export function SearchDashboard() {
         }
         setError(null);
         setResults(payload);
+        if (view === "table") {
+          setCachedSearchResponse(queryString, payload);
+        }
       })
       .catch((fetchError) => {
         const message = fetchError instanceof Error ? fetchError.message : "Search failed";
@@ -395,30 +376,6 @@ export function SearchDashboard() {
   function addOrToggleBatch(batch: string) {
     setPage(1);
     toggleArrayValue(batch, batches, setBatches);
-  }
-
-  function toggleTableColumn(column: TableColumnKey) {
-    setVisibleTableColumns((current) => {
-      if (current.includes(column)) {
-        return current.filter((item) => item !== column);
-      }
-
-      const next = [...current, column];
-      return ALL_TABLE_COLUMNS.map((item) => item.key).filter((key) => next.includes(key));
-    });
-  }
-
-  function resetAllFilters() {
-    setPage(1);
-    setTags([]);
-    setIndustries([]);
-    setBatches([]);
-    setYears([]);
-    setRegions([]);
-    setStages([]);
-    setIsHiring(false);
-    setNonprofit(false);
-    setTopCompany(false);
   }
 
   function handleLegendDrilldown(clickedSeries: string | number | undefined) {
@@ -700,115 +657,6 @@ export function SearchDashboard() {
               </ControlGroup>
             </div>
 
-            <div className="mt-4 space-y-3">
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,220px)_minmax(0,320px)_minmax(0,1fr)_auto] xl:items-start">
-                <ControlGroup label="Browse">
-                  <SegmentedControl
-                    compact
-                    fullWidth
-                    options={[
-                      { value: "results", label: "Results" },
-                      { value: "analytics", label: "Analytics" },
-                    ]}
-                    value={activeTab}
-                    onChange={(next) => setActiveTab(next as DashboardTab)}
-                  />
-                </ControlGroup>
-
-                <ControlGroup label="Sort">
-                  <SegmentedControl
-                    compact
-                    fullWidth
-                    options={[
-                      { value: "relevance", label: "Relevance" },
-                      { value: "newest", label: "Newest" },
-                      { value: "team_size", label: "Team" },
-                      { value: "name", label: "Name" },
-                    ]}
-                    value={sort}
-                    onChange={(next) => {
-                      setPage(1);
-                      setSort(next as SortOption);
-                    }}
-                  />
-                </ControlGroup>
-
-                <ControlGroup label="Quick filters">
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-                    <CompactToggle
-                      label="Hiring"
-                      checked={isHiring}
-                      onCheckedChange={(checked) => {
-                        setPage(1);
-                        setIsHiring(checked);
-                      }}
-                      className="w-full sm:w-auto"
-                    />
-                    <CompactToggle
-                      label="Nonprofit"
-                      checked={nonprofit}
-                      onCheckedChange={(checked) => {
-                        setPage(1);
-                        setNonprofit(checked);
-                      }}
-                      className="w-full sm:w-auto"
-                    />
-                    <CompactToggle
-                      label="Top"
-                      checked={topCompany}
-                      onCheckedChange={(checked) => {
-                        setPage(1);
-                        setTopCompany(checked);
-                      }}
-                      className="w-full sm:w-auto"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowAdvancedFilters((current) => !current)}
-                      className="w-full rounded-full sm:w-auto"
-                    >
-                      <SlidersHorizontal className="size-3.5" />
-                      More filters
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={resetAllFilters}
-                      className="w-full rounded-full sm:w-auto"
-                    >
-                      <RefreshCcw className="size-3.5" />
-                      Reset
-                    </Button>
-                  </div>
-                </ControlGroup>
-
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-2 text-xs font-medium text-primary xl:mt-6 xl:self-start">
-                  <Layers3 className="size-3.5" />
-                  Hybrid search
-                </div>
-              </div>
-
-              <CohortFilterPanel
-                granularity={cohortGranularity}
-                onGranularityChange={(next) => setCohortGranularity(next)}
-                years={pickTopFacets(facets?.years ?? [], 18)}
-                batches={pickTopFacets(facets?.batches ?? [], 40)}
-                selectedYears={years}
-                selectedBatches={batches}
-                loading={facetsLoading}
-                onToggleYear={(value) => {
-                  setPage(1);
-                  toggleArrayValue(value, years, setYears);
-                }}
-                onToggleBatch={(value) => {
-                  setPage(1);
-                  toggleArrayValue(value, batches, setBatches);
-                }}
-              />
-            </div>
           </div>
 
           {activeFilters.length > 0 ? (
@@ -826,52 +674,6 @@ export function SearchDashboard() {
             </div>
           ) : null}
 
-          {showAdvancedFilters ? (
-            <Card className="border-border/70 bg-card/95">
-              <CardContent className="grid gap-5 p-4 md:grid-cols-2 xl:grid-cols-4">
-                <FacetChecklist
-                  title="Tags"
-                  items={pickTopFacets(facets?.tags ?? [], 20)}
-                  selected={tags}
-                  loading={facetsLoading}
-                  onToggle={(value) => {
-                    setPage(1);
-                    toggleArrayValue(value, tags, setTags);
-                  }}
-                />
-                <FacetChecklist
-                  title="Industries"
-                  items={pickTopFacets(facets?.industries ?? [], 16)}
-                  selected={industries}
-                  loading={facetsLoading}
-                  onToggle={(value) => {
-                    setPage(1);
-                    toggleArrayValue(value, industries, setIndustries);
-                  }}
-                />
-                <FacetChecklist
-                  title="Stages"
-                  items={pickTopFacets(facets?.stages ?? [], 12)}
-                  selected={stages}
-                  loading={facetsLoading}
-                  onToggle={(value) => {
-                    setPage(1);
-                    toggleArrayValue(value, stages, setStages);
-                  }}
-                />
-                <FacetChecklist
-                  title="Regions"
-                  items={pickTopFacets(facets?.regions ?? [], 12)}
-                  selected={regions}
-                  loading={facetsLoading}
-                  onToggle={(value) => {
-                    setPage(1);
-                    toggleArrayValue(value, regions, setRegions);
-                  }}
-                />
-              </CardContent>
-            </Card>
-          ) : null}
         </section>
 
         {activeTab === "results" ? (
@@ -885,54 +687,32 @@ export function SearchDashboard() {
                     : `Hybrid search, page ${results.page} of ${totalPages}`}
                 </p>
               </div>
-              {view === "table" ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowColumnPicker((current) => !current)}
-                    className="rounded-full"
-                  >
-                    <ListFilter className="size-3.5" />
-                    Columns
-                  </Button>
-                  <PaginationControls
-                    page={page}
-                    total={results.total}
-                    pageSize={results.pageSize}
-                    pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
-                    onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
-                    onNext={() => setPage((previous) => previous + 1)}
-                    onPageSizeChange={(nextSize) => {
-                      setPage(1);
-                      setTablePageSize(nextSize);
-                    }}
-                  />
-                </div>
-              ) : (
+              {view === "cards" ? (
                 <div className="text-xs text-muted-foreground">
                   {results.results.length < results.total ? "Scroll to load more" : "All matching cards loaded"}
                 </div>
-              )}
+              ) : null}
             </div>
-
-            {view === "table" && showColumnPicker ? (
-              <ColumnPicker
-                columns={ALL_TABLE_COLUMNS}
-                selectedColumns={visibleTableColumns}
-                onToggleColumn={toggleTableColumn}
-              />
-            ) : null}
 
             {error ? <ErrorBanner message={error} /> : null}
 
-            {resultsLoading ? (
+            {resultsLoading && results.results.length === 0 ? (
               <LoadingState label="Refreshing results..." />
             ) : results.results.length === 0 ? (
               <EmptyState />
             ) : view === "cards" ? (
               <>
+                <ResultsControlStrip
+                  activeTab={activeTab}
+                  onActiveTabChange={setActiveTab}
+                  sort={sort}
+                  onSortChange={(nextSort) => {
+                    setPage(1);
+                    setSort(nextSort);
+                  }}
+                  view={view}
+                  onViewChange={setView}
+                />
                 <ResultsCardGrid
                   results={results.results}
                   returnToPath={returnToPath}
@@ -945,19 +725,83 @@ export function SearchDashboard() {
                 {loadingMoreCards ? <LoadingState label="Loading more companies..." /> : null}
               </>
             ) : (
-              <ResultsTable
+              <ResultsNikoPreviewTable
                 results={results.results}
+                total={results.total}
+                page={page}
+                pageSize={results.pageSize}
+                pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
                 returnToPath={returnToPath}
-                selectedTags={tags}
-                selectedIndustries={industries}
                 sort={sort}
                 visibleColumns={visibleTableColumns}
+                selectedTags={tags}
+                selectedIndustries={industries}
+                selectedBatches={batches}
+                selectedStages={stages}
+                selectedRegions={regions}
+                isHiring={isHiring}
+                topCompany={topCompany}
+                nonprofit={nonprofit}
+                tagOptions={pickTopFacets(facets?.tags ?? [], 20)}
+                industryOptions={pickTopFacets(facets?.industries ?? [], 16)}
+                batchOptions={pickTopFacets(facets?.batches ?? [], 20)}
+                stageOptions={pickTopFacets(facets?.stages ?? [], 12)}
+                regionOptions={pickTopFacets(facets?.regions ?? [], 12)}
+                isLoading={resultsLoading}
                 onSortChange={(nextSort) => {
                   setPage(1);
                   setSort(nextSort);
                 }}
-                onToggleTag={addOrToggleTag}
-                onToggleIndustry={addOrToggleIndustry}
+                onPageChange={setPage}
+                onPageSizeChange={(nextSize) => {
+                  setPage(1);
+                  setTablePageSize(nextSize);
+                }}
+                onVisibleColumnsChange={setVisibleTableColumns}
+                onYearsChange={(nextYears) => {
+                  setPage(1);
+                  setYears(nextYears);
+                }}
+                onTagsChange={(nextTags) => {
+                  setPage(1);
+                  setTags(nextTags);
+                }}
+                onIndustriesChange={(nextIndustries) => {
+                  setPage(1);
+                  setIndustries(nextIndustries);
+                }}
+                onBatchesChange={(nextBatches) => {
+                  setPage(1);
+                  setBatches(nextBatches);
+                }}
+                onStagesChange={(nextStages) => {
+                  setPage(1);
+                  setStages(nextStages);
+                }}
+                onRegionsChange={(nextRegions) => {
+                  setPage(1);
+                  setRegions(nextRegions);
+                }}
+                onStatusFlagsChange={(nextStatus) => {
+                  setPage(1);
+                  setIsHiring(nextStatus.isHiring);
+                  setTopCompany(nextStatus.topCompany);
+                  setNonprofit(nextStatus.nonprofit);
+                }}
+                selectedYears={years}
+                toolbarPrefix={
+                  <ResultsControlStrip
+                    activeTab={activeTab}
+                    onActiveTabChange={setActiveTab}
+                    sort={sort}
+                    onSortChange={(nextSort) => {
+                      setPage(1);
+                      setSort(nextSort);
+                    }}
+                    view={view}
+                    onViewChange={setView}
+                  />
+                }
               />
             )}
           </section>
@@ -1026,50 +870,28 @@ export function SearchDashboard() {
                     Keep chart drilldowns and table browsing in one secondary workspace.
                   </p>
                 </div>
-                {view === "table" ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowColumnPicker((current) => !current)}
-                      className="rounded-full"
-                    >
-                      <ListFilter className="size-3.5" />
-                      Columns
-                    </Button>
-                    <PaginationControls
-                      page={page}
-                      total={results.total}
-                      pageSize={results.pageSize}
-                      pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
-                      onPrev={() => setPage((previous) => Math.max(1, previous - 1))}
-                      onNext={() => setPage((previous) => previous + 1)}
-                      onPageSizeChange={(nextSize) => {
-                        setPage(1);
-                        setTablePageSize(nextSize);
-                      }}
-                    />
-                  </div>
-                ) : (
+                {view === "cards" ? (
                   <div className="text-xs text-muted-foreground">
                     {results.results.length.toLocaleString()} of {results.total.toLocaleString()} loaded
                   </div>
-                )}
+                ) : null}
               </div>
 
-              {view === "table" && showColumnPicker ? (
-                <ColumnPicker
-                  columns={ALL_TABLE_COLUMNS}
-                  selectedColumns={visibleTableColumns}
-                  onToggleColumn={toggleTableColumn}
-                />
-              ) : null}
-
-              {resultsLoading ? (
+              {resultsLoading && results.results.length === 0 ? (
                 <LoadingState label="Refreshing results..." />
               ) : view === "cards" ? (
                 <>
+                  <ResultsControlStrip
+                    activeTab={activeTab}
+                    onActiveTabChange={setActiveTab}
+                    sort={sort}
+                    onSortChange={(nextSort) => {
+                      setPage(1);
+                      setSort(nextSort);
+                    }}
+                    view={view}
+                    onViewChange={setView}
+                  />
                   <ResultsCardGrid
                     results={results.results}
                     returnToPath={returnToPath}
@@ -1082,19 +904,83 @@ export function SearchDashboard() {
                   {loadingMoreCards ? <LoadingState label="Loading more companies..." /> : null}
                 </>
               ) : (
-                <ResultsTable
+                <ResultsNikoPreviewTable
                   results={results.results}
+                  total={results.total}
+                  page={page}
+                  pageSize={results.pageSize}
+                  pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
                   returnToPath={returnToPath}
-                  selectedTags={tags}
-                  selectedIndustries={industries}
                   sort={sort}
                   visibleColumns={visibleTableColumns}
+                  selectedTags={tags}
+                  selectedIndustries={industries}
+                  selectedBatches={batches}
+                  selectedStages={stages}
+                  selectedRegions={regions}
+                  isHiring={isHiring}
+                  topCompany={topCompany}
+                  nonprofit={nonprofit}
+                  tagOptions={pickTopFacets(facets?.tags ?? [], 20)}
+                  industryOptions={pickTopFacets(facets?.industries ?? [], 16)}
+                  batchOptions={pickTopFacets(facets?.batches ?? [], 20)}
+                  stageOptions={pickTopFacets(facets?.stages ?? [], 12)}
+                  regionOptions={pickTopFacets(facets?.regions ?? [], 12)}
+                  isLoading={resultsLoading}
                   onSortChange={(nextSort) => {
                     setPage(1);
                     setSort(nextSort);
                   }}
-                  onToggleTag={addOrToggleTag}
-                  onToggleIndustry={addOrToggleIndustry}
+                  onPageChange={setPage}
+                  onPageSizeChange={(nextSize) => {
+                    setPage(1);
+                    setTablePageSize(nextSize);
+                  }}
+                  onVisibleColumnsChange={setVisibleTableColumns}
+                  onYearsChange={(nextYears) => {
+                    setPage(1);
+                    setYears(nextYears);
+                  }}
+                  onTagsChange={(nextTags) => {
+                    setPage(1);
+                    setTags(nextTags);
+                  }}
+                  onIndustriesChange={(nextIndustries) => {
+                    setPage(1);
+                    setIndustries(nextIndustries);
+                  }}
+                  onBatchesChange={(nextBatches) => {
+                    setPage(1);
+                    setBatches(nextBatches);
+                  }}
+                  onStagesChange={(nextStages) => {
+                    setPage(1);
+                    setStages(nextStages);
+                  }}
+                  onRegionsChange={(nextRegions) => {
+                    setPage(1);
+                    setRegions(nextRegions);
+                  }}
+                  onStatusFlagsChange={(nextStatus) => {
+                    setPage(1);
+                    setIsHiring(nextStatus.isHiring);
+                    setTopCompany(nextStatus.topCompany);
+                    setNonprofit(nextStatus.nonprofit);
+                  }}
+                  selectedYears={years}
+                  toolbarPrefix={
+                    <ResultsControlStrip
+                      activeTab={activeTab}
+                      onActiveTabChange={setActiveTab}
+                      sort={sort}
+                      onSortChange={(nextSort) => {
+                        setPage(1);
+                        setSort(nextSort);
+                      }}
+                      view={view}
+                      onViewChange={setView}
+                    />
+                  }
                 />
               )}
             </div>
@@ -1239,30 +1125,6 @@ function SegmentedControl({
   );
 }
 
-function CompactToggle({
-  label,
-  checked,
-  onCheckedChange,
-  className,
-}: {
-  label: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-between gap-3 rounded-full border border-border/70 bg-background/70 px-3 py-2",
-        className,
-      )}
-    >
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
-    </div>
-  );
-}
-
 function ControlGroup({
   label,
   children,
@@ -1280,298 +1142,61 @@ function ControlGroup({
   );
 }
 
-function PaginationControls({
-  page,
-  total,
-  pageSize,
-  pageSizeOptions,
-  onPrev,
-  onNext,
-  onPageSizeChange,
+function ResultsControlStrip({
+  activeTab,
+  onActiveTabChange,
+  sort,
+  onSortChange,
+  view,
+  onViewChange,
 }: {
-  page: number;
-  total: number;
-  pageSize: number;
-  pageSizeOptions: number[];
-  onPrev: () => void;
-  onNext: () => void;
-  onPageSizeChange: (value: number) => void;
+  activeTab: DashboardTab;
+  onActiveTabChange: (next: DashboardTab) => void;
+  sort: SortOption;
+  onSortChange: (next: SortOption) => void;
+  view: ResultsView;
+  onViewChange: (next: ResultsView) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/70 bg-background/70 p-1">
-      <label className="flex items-center gap-2 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs text-muted-foreground">
-        <span>Rows</span>
-        <select
-          value={pageSize}
-          onChange={(event) => onPageSizeChange(Number(event.target.value))}
-          className="bg-transparent text-foreground outline-none"
-        >
-          {pageSizeOptions.map((option) => (
-            <option key={`page-size-${option}`} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
-      <Button type="button" variant="ghost" size="sm" disabled={page <= 1} onClick={onPrev} className="rounded-full">
-        Prev
-      </Button>
-      <span className="px-2 text-xs text-muted-foreground">
-        {page}/{Math.max(1, Math.ceil(total / pageSize))}
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        disabled={page * pageSize >= total}
-        onClick={onNext}
-        className="rounded-full"
-      >
-        Next
-      </Button>
-    </div>
-  );
-}
-
-function ColumnPicker({
-  columns,
-  selectedColumns,
-  onToggleColumn,
-}: {
-  columns: Array<{ key: TableColumnKey; label: string }>;
-  selectedColumns: TableColumnKey[];
-  onToggleColumn: (column: TableColumnKey) => void;
-}) {
-  return (
-    <Card className="border-border/70 bg-card/95">
-      <CardContent className="space-y-3 p-4">
-        <div>
-          <p className="text-sm font-medium">Customize table columns</p>
-          <p className="text-xs text-muted-foreground">
-            Company stays pinned. Toggle whichever metadata columns you want in the table.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {columns.map((column) => {
-            const selected = selectedColumns.includes(column.key);
-            return (
-              <button
-                key={`column-${column.key}`}
-                type="button"
-                onClick={() => onToggleColumn(column.key)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs transition",
-                  selected
-                    ? "border-primary/40 bg-primary/12 text-primary"
-                    : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {column.label}
-              </button>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function FacetChecklist<T extends string | number>({
-  title,
-  items,
-  selected,
-  loading,
-  onToggle,
-}: {
-  title: string;
-  items: FacetItem<T>[];
-  selected: T[];
-  loading: boolean;
-  onToggle: (value: T) => void;
-}) {
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">{title}</h3>
-        <span className="text-xs text-muted-foreground">
-          {selected.length ? `${selected.length} active` : "Top facets"}
-        </span>
-      </div>
-      <div className="max-h-48 space-y-1 overflow-auto pr-1">
-        {loading ? (
-          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
-            Loading {title.toLowerCase()}...
-          </div>
-        ) : items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
-            No facets available.
-          </div>
-        ) : (
-          items.map((item) => {
-            const checked = selected.includes(item.value);
-            return (
-              <button
-                key={`${title}-${String(item.value)}`}
-                type="button"
-                onClick={() => onToggle(item.value)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition",
-                  checked
-                    ? "border-primary/30 bg-primary/10 text-primary"
-                    : "border-border/70 bg-background/40 text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <span className="truncate">{String(item.value)}</span>
-                <span className={cn("text-[11px]", checked ? "text-primary" : "text-muted-foreground")}>
-                  {item.count}
-                </span>
-              </button>
-            );
-          })
-        )}
-      </div>
-    </section>
-  );
-}
-
-function CohortFilterPanel({
-  granularity,
-  onGranularityChange,
-  years,
-  batches,
-  selectedYears,
-  selectedBatches,
-  loading,
-  onToggleYear,
-  onToggleBatch,
-}: {
-  granularity: CohortGranularity;
-  onGranularityChange: (value: CohortGranularity) => void;
-  years: FacetItem<number>[];
-  batches: FacetItem<string>[];
-  selectedYears: number[];
-  selectedBatches: string[];
-  loading: boolean;
-  onToggleYear: (value: number) => void;
-  onToggleBatch: (value: string) => void;
-}) {
-  const groupedBatches = useMemo(() => groupBatchFacets(batches), [batches]);
-  const visibleBatchGroups = selectedYears.length
-    ? groupedBatches.filter((group) => group.year !== null && selectedYears.includes(group.year))
-    : groupedBatches.slice(0, 6);
-
-  return (
-    <div className="rounded-2xl border border-border/70 bg-background/45 p-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Cohort</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {granularity === "year"
-              ? "Broader filtering by launch year."
-              : "Pick a year, then optionally narrow to a specific batch."}
-          </p>
-        </div>
+    <>
+      <ControlGroup label="Browse">
         <SegmentedControl
           compact
           options={[
-            { value: "year", label: "Year" },
-            { value: "batch", label: "Batch" },
+            { value: "results", label: "Results" },
+            { value: "analytics", label: "Analytics" },
           ]}
-          value={granularity}
-          onChange={(value) => onGranularityChange(value as CohortGranularity)}
+          value={activeTab}
+          onChange={(next) => onActiveTabChange(next as DashboardTab)}
         />
-      </div>
+      </ControlGroup>
 
-      {loading ? (
-        <div className="mt-3 rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
-          Loading cohort filters...
-        </div>
-      ) : granularity === "year" ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {years.map((item) => {
-            const selected = selectedYears.includes(item.value);
-            return (
-              <button
-                key={`cohort-year-${item.value}`}
-                type="button"
-                onClick={() => onToggleYear(item.value)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs transition",
-                  selected
-                    ? "border-primary/40 bg-primary/12 text-primary"
-                    : "border-border/70 bg-background/80 text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {item.value}
-                <span className="ml-2 text-[11px] opacity-70">{item.count}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="mt-3 space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {years.map((item) => {
-              const selected = selectedYears.includes(item.value);
-              return (
-                <button
-                  key={`batch-year-${item.value}`}
-                  type="button"
-                  onClick={() => onToggleYear(item.value)}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs transition",
-                    selected
-                      ? "border-primary/40 bg-primary/12 text-primary"
-                      : "border-border/70 bg-background/80 text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {item.value}
-                  <span className="ml-2 text-[11px] opacity-70">{item.count}</span>
-                </button>
-              );
-            })}
-          </div>
+      <ControlGroup label="Sort">
+        <SegmentedControl
+          compact
+          options={[
+            { value: "relevance", label: "Relevance" },
+            { value: "newest", label: "Newest" },
+            { value: "team_size", label: "Team" },
+            { value: "name", label: "Name" },
+          ]}
+          value={sort}
+          onChange={(next) => onSortChange(next as SortOption)}
+        />
+      </ControlGroup>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {visibleBatchGroups.length > 0 ? (
-              visibleBatchGroups.map((group) => (
-                <section key={`batch-group-${group.label}`} className="rounded-2xl border border-border/70 bg-card/70 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium">{group.label}</h3>
-                    <span className="text-[11px] text-muted-foreground">{group.batches.length} batches</span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {group.batches.map((item) => {
-                      const selected = selectedBatches.includes(item.value);
-                      return (
-                        <button
-                          key={`cohort-batch-${item.value}`}
-                          type="button"
-                          onClick={() => onToggleBatch(item.value)}
-                          className={cn(
-                            "rounded-full border px-3 py-1.5 text-xs transition",
-                            selected
-                              ? "border-primary/40 bg-primary/12 text-primary"
-                              : "border-border/70 bg-background/80 text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {item.value}
-                          <span className="ml-2 text-[11px] opacity-70">{item.count}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
-                Select a year above to narrow batch choices.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+      <ControlGroup label="Display">
+        <SegmentedControl
+          compact
+          options={[
+            { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
+            { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
+          ]}
+          value={view}
+          onChange={(next) => onViewChange(next as ResultsView)}
+        />
+      </ControlGroup>
+    </>
   );
 }
 

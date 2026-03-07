@@ -2,10 +2,14 @@ import * as React from "react";
 
 import { cn } from "../../lib/utils";
 
+function TableComponent({ className, ...props }: React.ComponentProps<"table">) {
+  return <table data-slot="table" className={cn("w-full caption-bottom text-sm", className)} {...props} />;
+}
+
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div className="w-full overflow-x-auto">
-      <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
+      <TableComponent className={className} {...props} />
     </div>
   );
 }
@@ -46,4 +50,4 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   return <td className={cn("px-3 py-3 align-middle", className)} {...props} />;
 }
 
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell };
+export { TableComponent, Table, TableHeader, TableBody, TableRow, TableHead, TableCell };
