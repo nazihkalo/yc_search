@@ -34,26 +34,29 @@ export function ResultsTable({
   const router = useRouter();
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/95 shadow-sm">
-      <Table>
+    <div className="-mx-4 overflow-hidden border-y border-border/60 bg-card/95 shadow-sm sm:mx-0 sm:rounded-2xl sm:border">
+      <div className="border-b border-border/60 px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground sm:hidden">
+        Swipe for more columns
+      </div>
+      <Table className="min-w-[760px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[26%]">Company</TableHead>
-            <TableHead className="w-[14%]">Industry</TableHead>
-            <TableHead className="w-[16%]">Category</TableHead>
-            <TableHead className="w-[8%]">
+            <TableHead className="min-w-[280px]">Company</TableHead>
+            <TableHead className="w-[14%] hidden md:table-cell">Industry</TableHead>
+            <TableHead className="w-[16%] hidden lg:table-cell">Category</TableHead>
+            <TableHead className="min-w-[110px]">
               <SortButton active={sort === "newest"} onClick={() => onSortChange("newest")} label="Batch" />
             </TableHead>
-            <TableHead className="w-[8%]">Stage</TableHead>
-            <TableHead className="w-[8%]">
+            <TableHead className="w-[8%] hidden lg:table-cell">Stage</TableHead>
+            <TableHead className="w-[8%] hidden md:table-cell">
               <SortButton
                 active={sort === "team_size"}
                 onClick={() => onSortChange("team_size")}
                 label="Team"
               />
             </TableHead>
-            <TableHead className="w-[8%]">Status</TableHead>
-            <TableHead className="w-[12%]">Links</TableHead>
+            <TableHead className="min-w-[120px]">Status</TableHead>
+            <TableHead className="w-[12%] hidden sm:table-cell">Links</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -93,10 +96,22 @@ export function ResultsTable({
                     {company.all_locations ? (
                       <p className="mt-1 text-xs text-muted-foreground">{company.all_locations}</p>
                     ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2 md:hidden">
+                      {company.industries.slice(0, 1).map((industry) => (
+                        <Badge key={`${company.id}-industry-mobile-${industry}`} variant="muted">
+                          {industry}
+                        </Badge>
+                      ))}
+                      {company.is_hiring ? <Badge variant="success">Hiring</Badge> : null}
+                      {company.top_company ? <Badge>Top</Badge> : null}
+                    </div>
+                    <div className="mt-2 sm:hidden">
+                      <CompanyLinksRow links={company.top_links.slice(0, 3)} compact />
+                    </div>
                   </div>
                 </div>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">
                 <div className="flex flex-wrap gap-2">
                   {company.industries.slice(0, 2).map((industry) => {
                     const selected = selectedIndustries.includes(industry);
@@ -121,7 +136,7 @@ export function ResultsTable({
                   })}
                 </div>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden lg:table-cell">
                 <div className="flex flex-wrap gap-2">
                   {company.tags.slice(0, 3).map((tag) => {
                     const selected = selectedTags.includes(tag);
@@ -147,8 +162,8 @@ export function ResultsTable({
                 </div>
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">{company.batch ?? "N/A"}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{company.stage ?? "N/A"}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">
+              <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">{company.stage ?? "N/A"}</TableCell>
+              <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
                 {company.team_size ? company.team_size.toLocaleString() : "N/A"}
               </TableCell>
               <TableCell>
@@ -158,7 +173,7 @@ export function ResultsTable({
                   {company.nonprofit ? <Badge variant="secondary">NP</Badge> : null}
                 </div>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden sm:table-cell">
                 <CompanyLinksRow links={company.top_links.slice(0, 3)} compact />
               </TableCell>
             </TableRow>

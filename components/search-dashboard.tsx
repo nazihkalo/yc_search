@@ -534,21 +534,25 @@ export function SearchDashboard() {
                 ) : null}
               </div>
 
-              <SegmentedControl
-                options={[
-                  { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
-                  { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
-                ]}
-                value={view}
-                onChange={(next) => setView(next as ResultsView)}
-              />
+              <ControlGroup label="Display" className="lg:w-auto">
+                <SegmentedControl
+                  fullWidth
+                  options={[
+                    { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
+                    { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
+                  ]}
+                  value={view}
+                  onChange={(next) => setView(next as ResultsView)}
+                />
+              </ControlGroup>
             </div>
 
             <div className="mt-4 space-y-3">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,220px)_minmax(0,320px)_minmax(0,1fr)_auto] xl:items-start">
+                <ControlGroup label="Browse">
                   <SegmentedControl
                     compact
+                    fullWidth
                     options={[
                       { value: "results", label: "Results" },
                       { value: "analytics", label: "Analytics" },
@@ -556,8 +560,12 @@ export function SearchDashboard() {
                     value={activeTab}
                     onChange={(next) => setActiveTab(next as DashboardTab)}
                   />
+                </ControlGroup>
+
+                <ControlGroup label="Sort">
                   <SegmentedControl
                     compact
+                    fullWidth
                     options={[
                       { value: "relevance", label: "Relevance" },
                       { value: "newest", label: "Newest" },
@@ -570,47 +578,61 @@ export function SearchDashboard() {
                       setSort(next as SortOption);
                     }}
                   />
-                  <CompactToggle
-                    label="Hiring"
-                    checked={isHiring}
-                    onCheckedChange={(checked) => {
-                      setPage(1);
-                      setIsHiring(checked);
-                    }}
-                  />
-                  <CompactToggle
-                    label="Nonprofit"
-                    checked={nonprofit}
-                    onCheckedChange={(checked) => {
-                      setPage(1);
-                      setNonprofit(checked);
-                    }}
-                  />
-                  <CompactToggle
-                    label="Top"
-                    checked={topCompany}
-                    onCheckedChange={(checked) => {
-                      setPage(1);
-                      setTopCompany(checked);
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowAdvancedFilters((current) => !current)}
-                    className="rounded-full"
-                  >
-                    <SlidersHorizontal className="size-3.5" />
-                    More filters
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={resetAllFilters} className="rounded-full">
-                    <RefreshCcw className="size-3.5" />
-                    Reset
-                  </Button>
-                </div>
+                </ControlGroup>
 
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-2 text-xs font-medium text-primary">
+                <ControlGroup label="Quick filters">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+                    <CompactToggle
+                      label="Hiring"
+                      checked={isHiring}
+                      onCheckedChange={(checked) => {
+                        setPage(1);
+                        setIsHiring(checked);
+                      }}
+                      className="w-full sm:w-auto"
+                    />
+                    <CompactToggle
+                      label="Nonprofit"
+                      checked={nonprofit}
+                      onCheckedChange={(checked) => {
+                        setPage(1);
+                        setNonprofit(checked);
+                      }}
+                      className="w-full sm:w-auto"
+                    />
+                    <CompactToggle
+                      label="Top"
+                      checked={topCompany}
+                      onCheckedChange={(checked) => {
+                        setPage(1);
+                        setTopCompany(checked);
+                      }}
+                      className="w-full sm:w-auto"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAdvancedFilters((current) => !current)}
+                      className="w-full rounded-full sm:w-auto"
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                      More filters
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetAllFilters}
+                      className="w-full rounded-full sm:w-auto"
+                    >
+                      <RefreshCcw className="size-3.5" />
+                      Reset
+                    </Button>
+                  </div>
+                </ControlGroup>
+
+                <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-2 text-xs font-medium text-primary xl:mt-6 xl:self-start">
                   <Layers3 className="size-3.5" />
                   Hybrid search
                 </div>
@@ -950,14 +972,27 @@ function SegmentedControl({
   value,
   onChange,
   compact = false,
+  fullWidth = false,
 }: {
   options: Array<{ value: string; label: string; icon?: React.ReactNode }>;
   value: string;
   onChange: (value: string) => void;
   compact?: boolean;
+  fullWidth?: boolean;
 }) {
+  const useGridOnMobile = fullWidth && options.length > 2;
+
   return (
-    <div className="inline-flex flex-wrap rounded-full border border-border/70 bg-background/70 p-1">
+    <div
+      className={cn(
+        "rounded-full border border-border/70 bg-background/70 p-1",
+        fullWidth
+          ? useGridOnMobile
+            ? "grid w-full grid-cols-2 gap-1 sm:inline-flex sm:w-auto"
+            : "flex w-full"
+          : "inline-flex flex-wrap",
+      )}
+    >
       {options.map((option) => (
         <Button
           key={option.value}
@@ -965,7 +1000,7 @@ function SegmentedControl({
           variant={option.value === value ? "secondary" : "ghost"}
           size={compact ? "sm" : "default"}
           onClick={() => onChange(option.value)}
-          className="rounded-full"
+          className={cn("rounded-full", fullWidth && "w-full justify-center", !useGridOnMobile && fullWidth && "flex-1")}
         >
           {option.icon}
           {option.label}
@@ -979,15 +1014,39 @@ function CompactToggle({
   label,
   checked,
   onCheckedChange,
+  className,
 }: {
   label: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-2">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-full border border-border/70 bg-background/70 px-3 py-2",
+        className,
+      )}
+    >
       <span className="text-xs text-muted-foreground">{label}</span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function ControlGroup({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+      {children}
     </div>
   );
 }
