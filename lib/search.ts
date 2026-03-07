@@ -1,4 +1,4 @@
-import { getDb, parseJsonArray } from "./db";
+import { parseJsonArray, query, queryOne } from "./db";
 import { EMBEDDING_MODEL, getOpenAiClient } from "./openai";
 import { extractDescriptionFromMarkdown, extractUrlsFromMarkdown } from "./snapshot-utils";
 import type { CompanyRecord } from "./types";
@@ -60,7 +60,7 @@ function buildFilterWhereClause(
     filters.years.forEach((year, index) => {
       const key = `year_${index}`;
       params[key] = year;
-      yearClauses.push(`CAST(strftime('%Y', c.launched_at, 'unixepoch') AS INTEGER) = @${key}`);
+      yearClauses.push(`EXTRACT(YEAR FROM TO_TIMESTAMP(c.launched_at))::INTEGER = @${key}`);
     });
     fragments.push(`(${yearClauses.join(" OR ")})`);
   }
@@ -70,7 +70,9 @@ function buildFilterWhereClause(
     filters.tags.forEach((tag, index) => {
       const key = `tag_${index}`;
       params[key] = tag;
-      tagClauses.push(`EXISTS (SELECT 1 FROM json_each(c.tags) t WHERE t.value = @${key})`);
+      tagClauses.push(
+        `EXISTS (SELECT 1 FROM json_array_elements_text(c.tags::json) AS t(value) WHERE t.value = @${key})`,
+      );
     });
     fragments.push(`(${tagClauses.join(" OR ")})`);
   }
@@ -82,7 +84,11 @@ function buildFilterWhereClause(
       params[key] = industry;
       industrySubqueries.push(`
         c.industry = @${key}
-        OR EXISTS (SELECT 1 FROM json_each(c.industries) i WHERE i.value = @${key})
+        OR EXISTS (
+          SELECT 1
+          FROM json_array_elements_text(c.industries::json) AS i(value)
+          WHERE i.value = @${key}
+        )
       `);
     });
     fragments.push(`(${industrySubqueries.join(" OR ")})`);
@@ -101,7 +107,9 @@ function buildFilterWhereClause(
     filters.regions.forEach((region, index) => {
       const key = `region_${index}`;
       params[key] = region;
-      regionClauses.push(`EXISTS (SELECT 1 FROM json_each(c.regions) r WHERE r.value = @${key})`);
+      regionClauses.push(
+        `EXISTS (SELECT 1 FROM json_array_elements_text(c.regions::json) AS r(value) WHERE r.value = @${key})`,
+      );
     });
     fragments.push(`(${regionClauses.join(" OR ")})`);
   }
@@ -136,14 +144,13 @@ function hydrateResultRows(rows: SearchResultRow[]) {
   }));
 }
 
-export function keywordSearch(params: SearchParams) {
-  const db = getDb();
-  const query = params.query.trim();
+export async function keywordSearch(params: SearchParams) {
+  const searchQuery = params.query.trim();
   const whereClauses = ["1=1"];
   const queryParams: Record<string, string | number> = {};
 
-  if (query.length > 0) {
-    queryParams.query = `%${query.toLowerCase()}%`;
+  if (searchQuery.length > 0) {
+    queryParams.query = `%${searchQuery.toLowerCase()}%`;
     whereClauses.push(`
       (
         LOWER(c.name) LIKE @query
@@ -160,16 +167,13 @@ export function keywordSearch(params: SearchParams) {
   queryParams.limit = params.pageSize;
   queryParams.offset = offset;
 
-  const countRow = db
-    .prepare<[{ [key: string]: string | number }], { total: number }>(`
+  const countRow = await queryOne<{ total: string | number }>(`
       SELECT COUNT(*) AS total
       FROM companies c
       WHERE ${whereSql}
-    `)
-    .get(queryParams);
+    `, queryParams);
 
-  const rows = db
-    .prepare<[{ [key: string]: string | number }], SearchResultRow>(`
+  const rows = await query<SearchResultRow>(`
       SELECT
         c.id,
         c.name,
@@ -194,13 +198,12 @@ export function keywordSearch(params: SearchParams) {
         c.status
       FROM companies c
       WHERE ${whereSql}
-      ${buildSortClause(params.sort, query)}
+      ${buildSortClause(params.sort, searchQuery)}
       LIMIT @limit OFFSET @offset
-    `)
-    .all(queryParams);
+    `, queryParams);
 
   return {
-    total: countRow?.total ?? 0,
+    total: Number(countRow?.total ?? 0),
     page: params.page,
     pageSize: params.pageSize,
     results: hydrateResultRows(rows),
@@ -208,12 +211,12 @@ export function keywordSearch(params: SearchParams) {
 }
 
 function buildKeywordAndFilterSql(params: SearchParams) {
-  const query = params.query.trim();
+  const searchQuery = params.query.trim();
   const whereClauses = ["1=1"];
   const queryParams: Record<string, string | number> = {};
 
-  if (query.length > 0) {
-    queryParams.query = `%${query.toLowerCase()}%`;
+  if (searchQuery.length > 0) {
+    queryParams.query = `%${searchQuery.toLowerCase()}%`;
     whereClauses.push(`
       (
         LOWER(c.name) LIKE @query
@@ -264,9 +267,8 @@ function cosineSimilarity(a: number[], b: number[]) {
 }
 
 export async function semanticSearch(params: SearchParams) {
-  const db = getDb();
-  const query = params.query.trim();
-  if (!query) {
+  const searchQuery = params.query.trim();
+  if (!searchQuery) {
     // Keep default semantic view behavior aligned with keyword mode.
     return keywordSearch(params);
   }
@@ -274,7 +276,7 @@ export async function semanticSearch(params: SearchParams) {
   const openai = getOpenAiClient();
   const embeddingResponse = await openai.embeddings.create({
     model: EMBEDDING_MODEL,
-    input: query,
+    input: searchQuery,
   });
   const queryVector = embeddingResponse.data[0]?.embedding ?? [];
 
@@ -282,8 +284,7 @@ export async function semanticSearch(params: SearchParams) {
   const queryParams: Record<string, string | number> = {};
   buildFilterWhereClause(params.filters, queryParams, whereClauses);
 
-  const rows = db
-    .prepare<[{ [key: string]: string | number }], SearchResultRow & { vector: string }>(`
+  const rows = await query<SearchResultRow & { vector: string }>(`
       SELECT
         c.id,
         c.name,
@@ -310,8 +311,7 @@ export async function semanticSearch(params: SearchParams) {
       FROM companies c
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereClauses.join(" AND ")}
-    `)
-    .all(queryParams);
+    `, queryParams);
 
   const scored = rows
     .map((row: SearchResultRow & { vector: string }) => {
@@ -344,9 +344,8 @@ export async function semanticSearch(params: SearchParams) {
 }
 
 export async function getSemanticTopCompanyIds(params: SearchParams, limit = 100) {
-  const db = getDb();
-  const query = params.query.trim();
-  if (!query) {
+  const searchQuery = params.query.trim();
+  if (!searchQuery) {
     return [];
   }
 
@@ -354,18 +353,16 @@ export async function getSemanticTopCompanyIds(params: SearchParams, limit = 100
   const openai = getOpenAiClient();
   const embeddingResponse = await openai.embeddings.create({
     model: EMBEDDING_MODEL,
-    input: query,
+    input: searchQuery,
   });
   const queryVector = embeddingResponse.data[0]?.embedding ?? [];
 
-  const rows = db
-    .prepare<[{ [key: string]: string | number }], { id: number; vector: string }>(`
+  const rows = await query<{ id: number; vector: string }>(`
       SELECT c.id, e.vector
       FROM companies c
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereSql}
-    `)
-    .all(queryParams);
+    `, queryParams);
 
   return rows
     .map((row) => ({
@@ -439,7 +436,6 @@ export async function answerCompanyQuestion(
     return { answer: "", citations: [] };
   }
 
-  const db = getDb();
   const semantic = await semanticSearch({
     query: cleanQuestion,
     page: 1,
@@ -462,8 +458,7 @@ export async function answerCompanyQuestion(
     idParams[`id_${index}`] = id;
   });
 
-  const rows = db
-    .prepare<[{ [key: string]: number }], ChatContextRow>(`
+  const rows = await query<ChatContextRow>(`
       SELECT
         c.id,
         c.name,
@@ -477,8 +472,7 @@ export async function answerCompanyQuestion(
       LEFT JOIN website_snapshots s
         ON s.company_id = c.id AND s.source = 'crawl4ai'
       WHERE c.id IN (${placeholders.join(", ")})
-    `)
-    .all(idParams);
+    `, idParams);
 
   const byId = new Map(rows.map((row) => [row.id, row]));
   const orderedRows = ids.map((id) => byId.get(id)).filter((row): row is ChatContextRow => Boolean(row));
@@ -571,15 +565,17 @@ export async function answerCompanyQuestion(
   };
 }
 
-export function getFacets() {
-  const db = getDb();
-
-  const companies = db
-    .prepare<[], { tags: string; industries: string; regions: string; stage: string | null; launched_at: number | null }>(`
+export async function getFacets() {
+  const companies = await query<{
+    tags: string;
+    industries: string;
+    regions: string;
+    stage: string | null;
+    launched_at: number | null;
+  }>(`
       SELECT tags, industries, regions, stage, launched_at
       FROM companies
-    `)
-    .all();
+    `);
 
   const tagCounts = new Map<string, number>();
   const industryCounts = new Map<string, number>();
@@ -661,13 +657,12 @@ function firstCategory(row: AnalyticsCompanyRow, colorBy: Exclude<AnalyticsColor
   return industries[0] ?? "Unspecified";
 }
 
-export function getBatchAnalytics(
+export async function getBatchAnalytics(
   params: SearchParams,
   colorBy: AnalyticsColorBy,
   topN = 8,
   companyIdSubset?: number[],
 ) {
-  const db = getDb();
   let rows: AnalyticsCompanyRow[] = [];
 
   if (companyIdSubset && companyIdSubset.length > 0) {
@@ -677,24 +672,20 @@ export function getBatchAnalytics(
     ids.forEach((id, index) => {
       idParams[`id_${index}`] = id;
     });
-    rows = db
-      .prepare<[{ [key: string]: number }], AnalyticsCompanyRow>(`
+    rows = await query<AnalyticsCompanyRow>(`
         SELECT c.id, c.batch, c.launched_at, c.tags, c.industries
         FROM companies c
         WHERE c.id IN (${placeholders.join(", ")})
-      `)
-      .all(idParams);
+      `, idParams);
   } else if (companyIdSubset && companyIdSubset.length === 0) {
     rows = [];
   } else {
     const { whereSql, queryParams } = buildKeywordAndFilterSql(params);
-    rows = db
-      .prepare<[{ [key: string]: string | number }], AnalyticsCompanyRow>(`
+    rows = await query<AnalyticsCompanyRow>(`
         SELECT c.id, c.batch, c.launched_at, c.tags, c.industries
         FROM companies c
         WHERE ${whereSql}
-      `)
-      .all(queryParams);
+      `, queryParams);
   }
 
   const aggregateByBatch = new Map<string, BatchAggregate>();

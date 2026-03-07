@@ -24,7 +24,7 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    initializeDatabase();
+    await initializeDatabase();
     const body = bodySchema.parse(await request.json());
     const response = await answerCompanyQuestion(
       body.question,

@@ -1,12 +1,11 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-
 import { NextResponse } from "next/server";
-
-const execAsync = promisify(exec);
+import { initializeDatabase } from "../../../lib/db";
+import { getSyncEmbedLimit, getSyncScrapeLimit } from "../../../lib/env";
+import { runIncrementalSync } from "../../../lib/sync-job";
 
 export async function POST(request: Request) {
   try {
+    await initializeDatabase();
     const authHeader = request.headers.get("authorization");
     const token = process.env.SYNC_TOKEN;
 
@@ -17,18 +16,17 @@ export async function POST(request: Request) {
       }
     }
 
-    const { stdout, stderr } = await execAsync("npm run sync:all", {
-      cwd: process.cwd(),
-      env: process.env,
-      timeout: 1000 * 60 * 15,
-      maxBuffer: 1024 * 1024 * 10,
+    const result = await runIncrementalSync({
+      trigger: "manual",
+      scrapeLimit: getSyncScrapeLimit(),
+      embedLimit: getSyncEmbedLimit(),
     });
 
-    return NextResponse.json({
-      ok: true,
-      stdout,
-      stderr,
-    });
+    if (!result.ok && result.reason === "already_running") {
+      return NextResponse.json(result, { status: 409 });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

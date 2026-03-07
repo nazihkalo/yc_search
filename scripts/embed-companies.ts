@@ -1,6 +1,8 @@
+import { pathToFileURL } from "node:url";
+
 import pLimit from "p-limit";
 
-import { getDb, initializeDatabase } from "../lib/db";
+import { closeDb, execute, initializeDatabase, query, queryOne } from "../lib/db";
 import { sha256 } from "../lib/hash";
 import { EMBEDDING_MODEL, getOpenAiClient } from "../lib/openai";
 import { ACTIVE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
@@ -61,15 +63,19 @@ function buildEmbeddingText(candidate: EmbedCandidate): string {
   ].join("\n");
 }
 
-async function main() {
-  initializeDatabase();
-  const db = getDb();
+export type EmbedSummary = {
+  requested: number;
+  embeddedCount: number;
+  skippedCount: number;
+};
+
+export async function embedCompanies(options?: { limit?: number }): Promise<EmbedSummary> {
+  await initializeDatabase();
   const openai = getOpenAiClient();
   const source = ACTIVE_SNAPSHOT_SOURCE;
 
-  const batchLimit = parseLimitArg();
-  const candidates = db
-    .prepare<[{ limit: number; source: string }], EmbedCandidate>(`
+  const batchLimit = options?.limit ?? parseLimitArg();
+  const candidates = await query<EmbedCandidate>(`
       SELECT
         c.id,
         c.name,
@@ -89,48 +95,18 @@ async function main() {
       WHERE c.needs_embed = 1
       ORDER BY c.id ASC
       LIMIT @limit
-    `)
-    .all({ limit: batchLimit, source });
+    `, { limit: batchLimit, source });
 
   if (candidates.length === 0) {
     console.log("No companies need embeddings.");
-    return;
+    return {
+      requested: 0,
+      embeddedCount: 0,
+      skippedCount: 0,
+    };
   }
 
   const limit = pLimit(10);
-  const upsertEmbedding = db.prepare(`
-    INSERT INTO company_embeddings (
-      company_id,
-      model,
-      dimensions,
-      vector,
-      source_hash,
-      embedded_at,
-      updated_at
-    ) VALUES (
-      @company_id,
-      @model,
-      @dimensions,
-      @vector,
-      @source_hash,
-      CURRENT_TIMESTAMP,
-      CURRENT_TIMESTAMP
-    )
-    ON CONFLICT(company_id) DO UPDATE SET
-      model = excluded.model,
-      dimensions = excluded.dimensions,
-      vector = excluded.vector,
-      source_hash = excluded.source_hash,
-      embedded_at = CURRENT_TIMESTAMP,
-      updated_at = CURRENT_TIMESTAMP
-  `);
-
-  const markEmbedded = db.prepare(`
-    UPDATE companies
-    SET needs_embed = 0, updated_at = CURRENT_TIMESTAMP
-    WHERE id = @id
-  `);
-
   let embeddedCount = 0;
   let skippedCount = 0;
 
@@ -139,14 +115,17 @@ async function main() {
       limit(async () => {
         const embeddingText = buildEmbeddingText(candidate);
         const sourceHash = sha256(embeddingText);
-        const existing = db
-          .prepare<[{ id: number }], { source_hash: string }>(
-            "SELECT source_hash FROM company_embeddings WHERE company_id = @id",
-          )
-          .get({ id: candidate.id });
+        const existing = await queryOne<{ source_hash: string }>(
+          "SELECT source_hash FROM company_embeddings WHERE company_id = @id",
+          { id: candidate.id },
+        );
 
         if (existing && existing.source_hash === sourceHash) {
-          markEmbedded.run({ id: candidate.id });
+          await execute(`
+            UPDATE companies
+            SET needs_embed = 0, updated_at = NOW()
+            WHERE id = @id
+          `, { id: candidate.id });
           skippedCount += 1;
           return;
         }
@@ -157,41 +136,75 @@ async function main() {
         });
         const vector = response.data[0]?.embedding ?? [];
 
-        upsertEmbedding.run({
+        await execute(`
+          INSERT INTO company_embeddings (
+            company_id,
+            model,
+            dimensions,
+            vector,
+            source_hash,
+            embedded_at,
+            updated_at
+          ) VALUES (
+            @company_id,
+            @model,
+            @dimensions,
+            @vector,
+            @source_hash,
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT(company_id) DO UPDATE SET
+            model = EXCLUDED.model,
+            dimensions = EXCLUDED.dimensions,
+            vector = EXCLUDED.vector,
+            source_hash = EXCLUDED.source_hash,
+            embedded_at = NOW(),
+            updated_at = NOW()
+        `, {
           company_id: candidate.id,
           model: EMBEDDING_MODEL,
           dimensions: vector.length,
           vector: JSON.stringify(vector),
           source_hash: sourceHash,
         });
-        markEmbedded.run({ id: candidate.id });
+        await execute(`
+          UPDATE companies
+          SET needs_embed = 0, updated_at = NOW()
+          WHERE id = @id
+        `, { id: candidate.id });
         embeddedCount += 1;
       }),
     ),
   );
 
-  db.prepare(`
+  await execute(`
     INSERT INTO sync_state (key, value, updated_at)
-    VALUES ('embed_last_sync_at', @value, CURRENT_TIMESTAMP)
+    VALUES ('embed_last_sync_at', @value, NOW())
     ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
-      updated_at = CURRENT_TIMESTAMP
-  `).run({ value: new Date().toISOString() });
+      value = EXCLUDED.value,
+      updated_at = NOW()
+  `, { value: new Date().toISOString() });
 
-  console.log(
-    JSON.stringify(
-      {
-        requested: candidates.length,
-        embeddedCount,
-        skippedCount,
-      },
-      null,
-      2,
-    ),
-  );
+  return {
+    requested: candidates.length,
+    embeddedCount,
+    skippedCount,
+  };
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+async function main() {
+  const summary = await embedCompanies();
+  console.log(JSON.stringify(summary, null, 2));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await closeDb();
+    });
+}

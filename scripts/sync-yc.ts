@@ -1,5 +1,7 @@
+import { pathToFileURL } from "node:url";
+
 import { buildCompanySearchText } from "../lib/company-normalize";
-import { getDb, initializeDatabase } from "../lib/db";
+import { closeDb, execute, initializeDatabase, query, withTransaction } from "../lib/db";
 import { sha256 } from "../lib/hash";
 import { fetchYcCompanies } from "../lib/yc-api";
 
@@ -8,143 +10,26 @@ type ExistingCompanyRow = {
   company_hash: string;
 };
 
-async function main() {
-  initializeDatabase();
-  const db = getDb();
+export type SyncYcSummary = {
+  total: number;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+};
 
+export async function syncYcCompanies(): Promise<SyncYcSummary> {
+  await initializeDatabase();
   const companies = await fetchYcCompanies();
-
-  const existingRows = db
-    .prepare<[], ExistingCompanyRow>("SELECT id, company_hash FROM companies")
-    .all();
+  const existingRows = await query<ExistingCompanyRow>("SELECT id, company_hash FROM companies");
   const existingHashById = new Map(
     existingRows.map((row: ExistingCompanyRow) => [row.id, row.company_hash]),
   );
-
-  const upsertStatement = db.prepare(`
-    INSERT INTO companies (
-      id,
-      name,
-      slug,
-      former_names,
-      small_logo_thumb_url,
-      website,
-      all_locations,
-      long_description,
-      one_liner,
-      team_size,
-      highlight_black,
-      highlight_latinx,
-      highlight_women,
-      industry,
-      subindustry,
-      launched_at,
-      tags,
-      top_company,
-      is_hiring,
-      nonprofit,
-      batch,
-      status,
-      industries,
-      regions,
-      stage,
-      app_video_public,
-      demo_day_video_public,
-      question_answers,
-      url,
-      api,
-      search_text,
-      company_hash,
-      needs_scrape,
-      needs_embed,
-      updated_at
-    ) VALUES (
-      @id,
-      @name,
-      @slug,
-      @former_names,
-      @small_logo_thumb_url,
-      @website,
-      @all_locations,
-      @long_description,
-      @one_liner,
-      @team_size,
-      @highlight_black,
-      @highlight_latinx,
-      @highlight_women,
-      @industry,
-      @subindustry,
-      @launched_at,
-      @tags,
-      @top_company,
-      @is_hiring,
-      @nonprofit,
-      @batch,
-      @status,
-      @industries,
-      @regions,
-      @stage,
-      @app_video_public,
-      @demo_day_video_public,
-      @question_answers,
-      @url,
-      @api,
-      @search_text,
-      @company_hash,
-      @needs_scrape,
-      @needs_embed,
-      CURRENT_TIMESTAMP
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      slug = excluded.slug,
-      former_names = excluded.former_names,
-      small_logo_thumb_url = excluded.small_logo_thumb_url,
-      website = excluded.website,
-      all_locations = excluded.all_locations,
-      long_description = excluded.long_description,
-      one_liner = excluded.one_liner,
-      team_size = excluded.team_size,
-      highlight_black = excluded.highlight_black,
-      highlight_latinx = excluded.highlight_latinx,
-      highlight_women = excluded.highlight_women,
-      industry = excluded.industry,
-      subindustry = excluded.subindustry,
-      launched_at = excluded.launched_at,
-      tags = excluded.tags,
-      top_company = excluded.top_company,
-      is_hiring = excluded.is_hiring,
-      nonprofit = excluded.nonprofit,
-      batch = excluded.batch,
-      status = excluded.status,
-      industries = excluded.industries,
-      regions = excluded.regions,
-      stage = excluded.stage,
-      app_video_public = excluded.app_video_public,
-      demo_day_video_public = excluded.demo_day_video_public,
-      question_answers = excluded.question_answers,
-      url = excluded.url,
-      api = excluded.api,
-      search_text = excluded.search_text,
-      company_hash = excluded.company_hash,
-      needs_scrape = excluded.needs_scrape,
-      needs_embed = excluded.needs_embed,
-      updated_at = CURRENT_TIMESTAMP
-  `);
-
-  const setSyncState = db.prepare(`
-    INSERT INTO sync_state (key, value, updated_at)
-    VALUES (@key, @value, CURRENT_TIMESTAMP)
-    ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
-      updated_at = CURRENT_TIMESTAMP
-  `);
 
   let inserted = 0;
   let updated = 0;
   let unchanged = 0;
 
-  const writeTransaction = db.transaction(() => {
+  await withTransaction(async (client) => {
     for (const company of companies) {
       const companyHashPayload = {
         name: company.name,
@@ -190,7 +75,116 @@ async function main() {
         unchanged += 1;
       }
 
-      upsertStatement.run({
+      await execute(`
+        INSERT INTO companies (
+          id,
+          name,
+          slug,
+          former_names,
+          small_logo_thumb_url,
+          website,
+          all_locations,
+          long_description,
+          one_liner,
+          team_size,
+          highlight_black,
+          highlight_latinx,
+          highlight_women,
+          industry,
+          subindustry,
+          launched_at,
+          tags,
+          top_company,
+          is_hiring,
+          nonprofit,
+          batch,
+          status,
+          industries,
+          regions,
+          stage,
+          app_video_public,
+          demo_day_video_public,
+          question_answers,
+          url,
+          api,
+          search_text,
+          company_hash,
+          needs_scrape,
+          needs_embed,
+          updated_at
+        ) VALUES (
+          @id,
+          @name,
+          @slug,
+          @former_names,
+          @small_logo_thumb_url,
+          @website,
+          @all_locations,
+          @long_description,
+          @one_liner,
+          @team_size,
+          @highlight_black,
+          @highlight_latinx,
+          @highlight_women,
+          @industry,
+          @subindustry,
+          @launched_at,
+          @tags,
+          @top_company,
+          @is_hiring,
+          @nonprofit,
+          @batch,
+          @status,
+          @industries,
+          @regions,
+          @stage,
+          @app_video_public,
+          @demo_day_video_public,
+          @question_answers,
+          @url,
+          @api,
+          @search_text,
+          @company_hash,
+          @needs_scrape,
+          @needs_embed,
+          NOW()
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          name = EXCLUDED.name,
+          slug = EXCLUDED.slug,
+          former_names = EXCLUDED.former_names,
+          small_logo_thumb_url = EXCLUDED.small_logo_thumb_url,
+          website = EXCLUDED.website,
+          all_locations = EXCLUDED.all_locations,
+          long_description = EXCLUDED.long_description,
+          one_liner = EXCLUDED.one_liner,
+          team_size = EXCLUDED.team_size,
+          highlight_black = EXCLUDED.highlight_black,
+          highlight_latinx = EXCLUDED.highlight_latinx,
+          highlight_women = EXCLUDED.highlight_women,
+          industry = EXCLUDED.industry,
+          subindustry = EXCLUDED.subindustry,
+          launched_at = EXCLUDED.launched_at,
+          tags = EXCLUDED.tags,
+          top_company = EXCLUDED.top_company,
+          is_hiring = EXCLUDED.is_hiring,
+          nonprofit = EXCLUDED.nonprofit,
+          batch = EXCLUDED.batch,
+          status = EXCLUDED.status,
+          industries = EXCLUDED.industries,
+          regions = EXCLUDED.regions,
+          stage = EXCLUDED.stage,
+          app_video_public = EXCLUDED.app_video_public,
+          demo_day_video_public = EXCLUDED.demo_day_video_public,
+          question_answers = EXCLUDED.question_answers,
+          url = EXCLUDED.url,
+          api = EXCLUDED.api,
+          search_text = EXCLUDED.search_text,
+          company_hash = EXCLUDED.company_hash,
+          needs_scrape = EXCLUDED.needs_scrape,
+          needs_embed = EXCLUDED.needs_embed,
+          updated_at = NOW()
+      `, {
         id: company.id,
         name: company.name,
         slug: company.slug,
@@ -225,37 +219,52 @@ async function main() {
         company_hash: companyHash,
         needs_scrape: isNew || changed ? 1 : 0,
         needs_embed: isNew || changed ? 1 : 0,
-      });
+      }, client);
     }
 
-    setSyncState.run({
+    await execute(`
+      INSERT INTO sync_state (key, value, updated_at)
+      VALUES (@key, @value, NOW())
+      ON CONFLICT(key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_at = NOW()
+    `, {
       key: "yc_last_sync_at",
       value: new Date().toISOString(),
-    });
+    }, client);
 
-    setSyncState.run({
+    await execute(`
+      INSERT INTO sync_state (key, value, updated_at)
+      VALUES (@key, @value, NOW())
+      ON CONFLICT(key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_at = NOW()
+    `, {
       key: "yc_company_count",
       value: String(companies.length),
-    });
+    }, client);
   });
 
-  writeTransaction();
-
-  console.log(
-    JSON.stringify(
-      {
-        total: companies.length,
-        inserted,
-        updated,
-        unchanged,
-      },
-      null,
-      2,
-    ),
-  );
+  return {
+    total: companies.length,
+    inserted,
+    updated,
+    unchanged,
+  };
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+async function main() {
+  const summary = await syncYcCompanies();
+  console.log(JSON.stringify(summary, null, 2));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await closeDb();
+    });
+}

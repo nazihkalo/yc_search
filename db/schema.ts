@@ -1,6 +1,4 @@
 export const SCHEMA_SQL = `
-PRAGMA journal_mode = WAL;
-
 CREATE TABLE IF NOT EXISTS companies (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -36,8 +34,8 @@ CREATE TABLE IF NOT EXISTS companies (
   company_hash TEXT NOT NULL DEFAULT '',
   needs_scrape INTEGER NOT NULL DEFAULT 1,
   needs_embed INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS website_snapshots (
@@ -47,8 +45,8 @@ CREATE TABLE IF NOT EXISTS website_snapshots (
   content_markdown TEXT NOT NULL DEFAULT '',
   content_hash TEXT NOT NULL DEFAULT '',
   error TEXT,
-  scraped_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  scraped_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (company_id, source),
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
 );
@@ -59,15 +57,36 @@ CREATE TABLE IF NOT EXISTS company_embeddings (
   dimensions INTEGER NOT NULL,
   vector TEXT NOT NULL,
   source_hash TEXT NOT NULL,
-  embedded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  embedded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS sync_state (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id BIGSERIAL PRIMARY KEY,
+  trigger TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  yc_total INTEGER,
+  yc_inserted INTEGER,
+  yc_updated INTEGER,
+  yc_unchanged INTEGER,
+  scrape_requested INTEGER,
+  scrape_success INTEGER,
+  scrape_failed INTEGER,
+  scrape_changed INTEGER,
+  scrape_unchanged INTEGER,
+  embed_requested INTEGER,
+  embed_success INTEGER,
+  embed_skipped INTEGER,
+  error TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_companies_batch ON companies(batch);
@@ -83,4 +102,6 @@ CREATE INDEX IF NOT EXISTS idx_companies_needs_embed ON companies(needs_embed);
 CREATE INDEX IF NOT EXISTS idx_snapshots_company_id ON website_snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_content_hash ON website_snapshots(content_hash);
 CREATE INDEX IF NOT EXISTS idx_embeddings_source_hash ON company_embeddings(source_hash);
+CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_runs_status ON sync_runs(status);
 `;

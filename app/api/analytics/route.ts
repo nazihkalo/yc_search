@@ -10,7 +10,7 @@ const topNSchema = z.coerce.number().int().min(1).max(20).default(8);
 
 export async function GET(request: Request) {
   try {
-    initializeDatabase();
+    await initializeDatabase();
 
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
@@ -21,13 +21,13 @@ export async function GET(request: Request) {
 
     const analytics =
       mode === "semantic" && params.query.trim().length > 0
-        ? getBatchAnalytics(
+        ? await getBatchAnalytics(
             params,
             colorBy,
             topN,
             await getSemanticTopCompanyIds(params, semanticTopLimit),
           )
-        : getBatchAnalytics(params, colorBy, topN);
+        : await getBatchAnalytics(params, colorBy, topN);
     return NextResponse.json(analytics);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -1,6 +1,8 @@
+import { pathToFileURL } from "node:url";
+
 import pLimit from "p-limit";
 
-import { getDb, initializeDatabase } from "../lib/db";
+import { closeDb, execute, initializeDatabase, query, queryOne } from "../lib/db";
 import { scrapeWebsiteMarkdown } from "../lib/crawl4ai";
 import { sha256 } from "../lib/hash";
 import { ACTIVE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
@@ -20,14 +22,20 @@ function parseLimitArg(defaultLimit = 500): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultLimit;
 }
 
-async function main() {
-  initializeDatabase();
-  const db = getDb();
+export type ScrapeSummary = {
+  requested: number;
+  successCount: number;
+  failureCount: number;
+  changedContentCount: number;
+  unchangedContentCount: number;
+};
+
+export async function scrapeCompanies(options?: { limit?: number }): Promise<ScrapeSummary> {
+  await initializeDatabase();
   const source = ACTIVE_SNAPSHOT_SOURCE;
 
-  const batchLimit = parseLimitArg();
-  const candidates = db
-    .prepare<[{ limit: number }], ScrapeCandidate>(`
+  const batchLimit = options?.limit ?? parseLimitArg();
+  const candidates = await query<ScrapeCandidate>(`
       SELECT id, name, website
       FROM companies
       WHERE needs_scrape = 1
@@ -35,62 +43,20 @@ async function main() {
         AND TRIM(website) != ''
       ORDER BY id ASC
       LIMIT @limit
-    `)
-    .all({ limit: batchLimit });
+    `, { limit: batchLimit });
 
   if (candidates.length === 0) {
     console.log("No companies need scraping.");
-    return;
+    return {
+      requested: 0,
+      successCount: 0,
+      failureCount: 0,
+      changedContentCount: 0,
+      unchangedContentCount: 0,
+    };
   }
 
   const limit = pLimit(8);
-  const upsertSnapshot = db.prepare(`
-    INSERT INTO website_snapshots (
-      company_id,
-      website_url,
-      content_markdown,
-      content_hash,
-      source,
-      error,
-      scraped_at,
-      updated_at
-    ) VALUES (
-      @company_id,
-      @website_url,
-      @content_markdown,
-      @content_hash,
-      @source,
-      @error,
-      CURRENT_TIMESTAMP,
-      CURRENT_TIMESTAMP
-    )
-    ON CONFLICT(company_id, source) DO UPDATE SET
-      website_url = excluded.website_url,
-      content_markdown = excluded.content_markdown,
-      content_hash = excluded.content_hash,
-      source = excluded.source,
-      error = excluded.error,
-      scraped_at = CURRENT_TIMESTAMP,
-      updated_at = CURRENT_TIMESTAMP
-  `);
-
-  const completeSuccess = db.prepare(`
-    UPDATE companies
-    SET
-      needs_scrape = 0,
-      needs_embed = @needs_embed,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = @id
-  `);
-
-  const failedScrape = db.prepare(`
-    UPDATE companies
-    SET
-      needs_scrape = 1,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = @id
-  `);
-
   let successCount = 0;
   let failureCount = 0;
   let changedContentCount = 0;
@@ -108,19 +74,43 @@ async function main() {
           const markdown = await scrapeWebsiteMarkdown(website);
           const contentHash = sha256(markdown);
 
-          const previous = db
-            .prepare<[{ id: number; source: string }], { content_hash: string }>(
-              `
-                SELECT content_hash
-                FROM website_snapshots
-                WHERE company_id = @id AND source = @source
-              `,
-            )
-            .get({ id: candidate.id, source });
+          const previous = await queryOne<{ content_hash: string }>(`
+            SELECT content_hash
+            FROM website_snapshots
+            WHERE company_id = @id AND source = @source
+          `, { id: candidate.id, source });
 
           const contentChanged = !previous || previous.content_hash !== contentHash;
 
-          upsertSnapshot.run({
+          await execute(`
+            INSERT INTO website_snapshots (
+              company_id,
+              website_url,
+              content_markdown,
+              content_hash,
+              source,
+              error,
+              scraped_at,
+              updated_at
+            ) VALUES (
+              @company_id,
+              @website_url,
+              @content_markdown,
+              @content_hash,
+              @source,
+              @error,
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT(company_id, source) DO UPDATE SET
+              website_url = EXCLUDED.website_url,
+              content_markdown = EXCLUDED.content_markdown,
+              content_hash = EXCLUDED.content_hash,
+              source = EXCLUDED.source,
+              error = EXCLUDED.error,
+              scraped_at = NOW(),
+              updated_at = NOW()
+          `, {
             company_id: candidate.id,
             website_url: website,
             content_markdown: markdown,
@@ -129,7 +119,14 @@ async function main() {
             error: null,
           });
 
-          completeSuccess.run({
+          await execute(`
+            UPDATE companies
+            SET
+              needs_scrape = 0,
+              needs_embed = @needs_embed,
+              updated_at = NOW()
+            WHERE id = @id
+          `, {
             id: candidate.id,
             needs_embed: contentChanged ? 1 : 0,
           });
@@ -142,7 +139,35 @@ async function main() {
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          upsertSnapshot.run({
+          await execute(`
+            INSERT INTO website_snapshots (
+              company_id,
+              website_url,
+              content_markdown,
+              content_hash,
+              source,
+              error,
+              scraped_at,
+              updated_at
+            ) VALUES (
+              @company_id,
+              @website_url,
+              @content_markdown,
+              @content_hash,
+              @source,
+              @error,
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT(company_id, source) DO UPDATE SET
+              website_url = EXCLUDED.website_url,
+              content_markdown = EXCLUDED.content_markdown,
+              content_hash = EXCLUDED.content_hash,
+              source = EXCLUDED.source,
+              error = EXCLUDED.error,
+              scraped_at = NOW(),
+              updated_at = NOW()
+          `, {
             company_id: candidate.id,
             website_url: website,
             content_markdown: "",
@@ -150,37 +175,48 @@ async function main() {
             source,
             error: errorMessage,
           });
-          failedScrape.run({ id: candidate.id });
+          await execute(`
+            UPDATE companies
+            SET
+              needs_scrape = 1,
+              updated_at = NOW()
+            WHERE id = @id
+          `, { id: candidate.id });
           failureCount += 1;
         }
       }),
     ),
   );
 
-  db.prepare(`
+  await execute(`
     INSERT INTO sync_state (key, value, updated_at)
-    VALUES ('scrape_last_sync_at', @value, CURRENT_TIMESTAMP)
+    VALUES ('scrape_last_sync_at', @value, NOW())
     ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
-      updated_at = CURRENT_TIMESTAMP
-  `).run({ value: new Date().toISOString() });
+      value = EXCLUDED.value,
+      updated_at = NOW()
+  `, { value: new Date().toISOString() });
 
-  console.log(
-    JSON.stringify(
-      {
-        requested: candidates.length,
-        successCount,
-        failureCount,
-        changedContentCount,
-        unchangedContentCount,
-      },
-      null,
-      2,
-    ),
-  );
+  return {
+    requested: candidates.length,
+    successCount,
+    failureCount,
+    changedContentCount,
+    unchangedContentCount,
+  };
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+async function main() {
+  const summary = await scrapeCompanies();
+  console.log(JSON.stringify(summary, null, 2));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await closeDb();
+    });
+}

@@ -6,7 +6,7 @@ import { semanticSearch } from "../../../lib/search";
 
 export async function GET(request: Request) {
   try {
-    initializeDatabase();
+    await initializeDatabase();
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
     const result = await semanticSearch(params);

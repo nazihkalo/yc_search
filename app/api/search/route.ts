@@ -6,10 +6,10 @@ import { keywordSearch } from "../../../lib/search";
 
 export async function GET(request: Request) {
   try {
-    initializeDatabase();
+    await initializeDatabase();
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
-    const result = keywordSearch(params);
+    const result = await keywordSearch(params);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

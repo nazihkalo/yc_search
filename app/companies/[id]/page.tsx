@@ -25,13 +25,13 @@ export default async function CompanyPage({
   }
   const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : "/";
 
-  initializeDatabase();
-  const company = getCompanyDetail(companyId);
+  await initializeDatabase();
+  const company = await getCompanyDetail(companyId);
   if (!company) {
     notFound();
   }
 
-  const similarCompanies = getSimilarCompanies(companyId, 8);
+  const similarCompanies = await getSimilarCompanies(companyId, 8);
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">

@@ -1,8 +1,15 @@
-import { initializeDatabase } from "../lib/db";
+import { closeDb, initializeDatabase } from "../lib/db";
 
-function main() {
-  initializeDatabase();
+async function main() {
+  await initializeDatabase();
   console.log("Database schema is up to date.");
 }
 
-main();
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await closeDb();
+  });

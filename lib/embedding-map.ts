@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { query, queryOne } from "./db";
 import { getSimilarCompanies } from "./company-details";
 
 type EmbeddingRow = {
@@ -144,28 +144,23 @@ function computePcaProjection(rows: EmbeddingRow[]) {
   }));
 }
 
-function loadProjection() {
-  const db = getDb();
-  const signatureRow = db
-    .prepare<[], { signature: string }>(`
+async function loadProjection() {
+  const signatureRow = await queryOne<{ signature: string }>(`
       SELECT
-        CAST(COUNT(*) AS TEXT) || '-' || COALESCE(MAX(updated_at), 'none') AS signature
+        CAST(COUNT(*) AS TEXT) || '-' || COALESCE(MAX(updated_at)::text, 'none') AS signature
       FROM company_embeddings
-    `)
-    .get();
+    `);
 
   const signature = signatureRow?.signature ?? "none";
   if (projectionCache && projectionCache.signature === signature) {
     return projectionCache.points;
   }
 
-  const rows = db
-    .prepare<[], EmbeddingRow>(`
+  const rows = await query<EmbeddingRow>(`
       SELECT c.id, c.name, e.vector
       FROM company_embeddings e
       INNER JOIN companies c ON c.id = e.company_id
-    `)
-    .all();
+    `);
 
   const points = computePcaProjection(rows);
   projectionCache = {
@@ -175,14 +170,14 @@ function loadProjection() {
   return points;
 }
 
-export function getCompanyEmbeddingMap(companyId: number, similarLimit = 12) {
-  const points = loadProjection();
+export async function getCompanyEmbeddingMap(companyId: number, similarLimit = 12) {
+  const points = await loadProjection();
   const selectedPoint = points.find((point) => point.id === companyId);
   if (!selectedPoint) {
     return null;
   }
 
-  const similarIds = new Set(getSimilarCompanies(companyId, similarLimit).map((company) => company.id));
+  const similarIds = new Set((await getSimilarCompanies(companyId, similarLimit)).map((company) => company.id));
   const mappedPoints = points
     .filter((point) => point.id === companyId || similarIds.has(point.id))
     .map((point) => ({

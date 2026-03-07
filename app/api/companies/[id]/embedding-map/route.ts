@@ -8,7 +8,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    initializeDatabase();
+    await initializeDatabase();
     const { searchParams } = new URL(request.url);
     const { id } = await context.params;
     const companyId = Number(id);
@@ -19,7 +19,7 @@ export async function GET(
       return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
     }
 
-    const map = getCompanyEmbeddingMap(companyId, similarLimit);
+    const map = await getCompanyEmbeddingMap(companyId, similarLimit);
     if (!map) {
       return NextResponse.json({ error: "Embedding map unavailable for this company" }, { status: 404 });
     }

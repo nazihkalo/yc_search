@@ -10,14 +10,14 @@ A full Next.js app for:
 
 - ingesting YC company data from `yc-oss/api`
 - scraping each company website with Crawl4AI
-- storing metadata + scrape snapshots + embeddings in local SQLite
+- storing metadata + scrape snapshots + embeddings in Postgres
 - searching with both faceted keyword search and semantic search
 - visual analytics by batch over time with optional stacked color-by tags/industries
 
 ## Stack
 
 - Next.js (App Router, TypeScript, Tailwind)
-- SQLite via `better-sqlite3`
+- PostgreSQL via `pg`
 - Crawl4AI (Python runtime) for website scraping
 - OpenAI embeddings (`text-embedding-3-small`) for semantic ranking
 
@@ -27,9 +27,11 @@ Copy `.env.example` to `.env` (or let `make setup` do it) and set:
 
 ```bash
 OPENAI_API_KEY=...
-# optional:
-# DATABASE_PATH=./data/yc_search.sqlite
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/yc_search
 # SYNC_TOKEN=your-shared-secret-for-api-sync
+# SQLITE_IMPORT_PATH=./data/yc_search.sqlite
+# SYNC_SCRAPE_LIMIT=25
+# SYNC_EMBED_LIMIT=50
 # CRAWL4AI_PYTHON_BIN=python3
 # CRAWL4AI_PAGE_TIMEOUT_MS=35000
 ```
@@ -100,6 +102,12 @@ npm run sync:scrape
 npm run sync:embed
 ```
 
+Run the bounded incremental job used by Railway cron:
+
+```bash
+npm run sync:incremental
+```
+
 Scrape all companies in one large pass (Crawl4AI):
 
 ```bash
@@ -131,6 +139,16 @@ npm run test:crawl4ai:sample
 
 This keeps scraping and embedding one-time unless company data/content changes.
 
+### Migrating existing SQLite data
+
+If you already have local SQLite data, import it into Postgres once:
+
+```bash
+npm run db:import:sqlite
+# or:
+# npm run db:import:sqlite -- --from=/absolute/path/to/yc_search.sqlite
+```
+
 ## API Endpoints
 
 - `GET /api/facets` -> available tags, industries, years, stages, regions
@@ -139,7 +157,8 @@ This keeps scraping and embedding one-time unless company data/content changes.
 - `POST /api/chat` -> chat QA over semantic company retrieval + Crawl4AI snapshot context
 - `GET /api/analytics` -> filtered batch chart data, optional stacked category series
 - `GET /api/companies/:id/embedding-map` -> PCA-based 2D embedding map for selected/similar/other company clusters
-- `POST /api/sync` -> runs `sync:all` (optional token auth via `Authorization: Bearer <SYNC_TOKEN>`)
+- `POST /api/sync` -> runs one bounded incremental sync (optional token auth via `Authorization: Bearer <SYNC_TOKEN>`)
+- `GET /api/sync/status` -> latest sync run, backlog counts, and sync timestamps
 
 ## Frontend behavior
 
@@ -167,30 +186,35 @@ This keeps scraping and embedding one-time unless company data/content changes.
 
 - Semantic search requires `OPENAI_API_KEY`.
 - Crawl4AI requires a working Python env where `crawl4ai` is installed.
-- SQLite lives in `./data/yc_search.sqlite` by default.
+- The app now expects `DATABASE_URL` for Postgres.
+- `better-sqlite3` remains as a dev-only dependency for one-off imports.
 
 ## Railway deployment
 
 This repo is configured for Railway via `Dockerfile` + `railway.json`.
 
-Required Railway setup:
+Recommended Railway setup:
 
-1. Add a **Volume** mounted at `/data`
-2. Set env vars:
+1. Add a dedicated Railway Postgres service.
+2. Set env vars on the web service:
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
    - `OPENAI_API_KEY=...`
-   - `DATABASE_PATH=/data/yc_search.sqlite`
    - `CRAWL4AI_PAGE_TIMEOUT_MS=35000` (optional)
-3. Deploy the web service
+   - `SYNC_TOKEN=...` (optional, for manual API-triggered sync)
+3. Deploy the web service with boot command:
+   - `npm run db:migrate && npm run start`
+4. If migrating existing local data, run the one-off import against the new Postgres DB:
+   - `npm run db:import:sqlite`
+5. Add a second Railway service from the same repo for background sync:
+   - command: `npm run db:migrate && npm run sync:incremental`
+   - cron: `*/30 * * * *`
+6. Set cron-worker env vars:
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+   - `OPENAI_API_KEY=...`
+   - `SYNC_SCRAPE_LIMIT=25`
+   - `SYNC_EMBED_LIMIT=50`
 
-App boot command runs DB migration automatically:
+Observability:
 
-- `npm run db:migrate && npm run start`
-
-After web is healthy, add a second Railway service (or cron job) from the same repo for background sync:
-
-- command: `npm run sync:all`
-
-If you split jobs:
-
-- scrape worker: `npm run sync:scrape -- --limit=20000`
-- embed worker: `npm run sync:embed -- --limit=20000`
+- use Railway Observability for logs/CPU/RAM on `web` and `sync-worker`
+- use `GET /api/sync/status` for the latest run plus pending scrape/embed backlog

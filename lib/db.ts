@@ -1,123 +1,142 @@
-import fs from "node:fs";
-import path from "node:path";
-
-import Database from "better-sqlite3";
+import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 import { SCHEMA_SQL } from "../db/schema";
+import { getEnv } from "./env";
 
-let dbInstance: Database.Database | null = null;
+type QueryValue = string | number | boolean | null | Date;
+type QueryParams = Record<string, QueryValue>;
+type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;
+
+let dbInstance: Pool | null = null;
 let initialized = false;
 
-function hasTable(db: Database.Database, tableName: string) {
-  const row = db
-    .prepare<[{ tableName: string }], { name: string }>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = @tableName LIMIT 1",
-    )
-    .get({ tableName });
-  return Boolean(row);
+function compileNamedQuery(text: string, params: QueryParams) {
+  const values: QueryValue[] = [];
+  const compiled = text.replace(/@([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, key: string) => {
+    if (!(key in params)) {
+      throw new Error(`Missing SQL parameter: ${key}`);
+    }
+    values.push(params[key] ?? null);
+    return `$${values.length}`;
+  });
+
+  return {
+    text: compiled,
+    values,
+  };
 }
 
-function shouldMigrateWebsiteSnapshots(db: Database.Database) {
-  if (!hasTable(db, "website_snapshots")) {
-    return false;
-  }
-
-  const columns = db
-    .prepare<[], { name: string; pk: number }>("PRAGMA table_info(website_snapshots)")
-    .all();
-  const companyIdPk = columns.find((column) => column.name === "company_id")?.pk ?? 0;
-  const sourcePk = columns.find((column) => column.name === "source")?.pk ?? 0;
-
-  // Legacy schema had company_id as the only primary key.
-  return companyIdPk === 1 && sourcePk === 0;
+function getRunner(client?: Queryable) {
+  return client ?? getDb();
 }
 
-function migrateWebsiteSnapshotsToMultiSource(db: Database.Database) {
-  if (!shouldMigrateWebsiteSnapshots(db)) {
-    return;
-  }
-
-  db.exec(`
-    BEGIN;
-    ALTER TABLE website_snapshots RENAME TO website_snapshots_legacy;
-    CREATE TABLE website_snapshots (
-      company_id INTEGER NOT NULL,
-      source TEXT NOT NULL DEFAULT 'crawl4ai',
-      website_url TEXT,
-      content_markdown TEXT NOT NULL DEFAULT '',
-      content_hash TEXT NOT NULL DEFAULT '',
-      error TEXT,
-      scraped_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (company_id, source),
-      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
-    );
-    INSERT INTO website_snapshots (
-      company_id,
-      source,
-      website_url,
-      content_markdown,
-      content_hash,
-      error,
-      scraped_at,
-      updated_at
-    )
-    SELECT
-      company_id,
-      COALESCE(NULLIF(source, ''), 'crawl4ai') AS source,
-      website_url,
-      content_markdown,
-      content_hash,
-      error,
-      scraped_at,
-      updated_at
-    FROM website_snapshots_legacy;
-    DROP TABLE website_snapshots_legacy;
-    COMMIT;
-  `);
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params: QueryParams = {},
+  client?: Queryable,
+) {
+  const runner = getRunner(client);
+  const compiled = compileNamedQuery(text, params);
+  const result = await runner.query(compiled.text, compiled.values);
+  return result.rows as T[];
 }
 
-function resolveDatabasePath() {
-  const configuredPath = process.env.DATABASE_PATH ?? "./data/yc_search.sqlite";
-  return path.isAbsolute(configuredPath)
-    ? configuredPath
-    : path.resolve(process.cwd(), configuredPath);
+export async function queryOne<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params: QueryParams = {},
+  client?: Queryable,
+) {
+  const rows = await query<T>(text, params, client);
+  return rows[0] ?? null;
 }
 
-function ensureDatabaseDirectory(databasePath: string) {
-  const dirPath = path.dirname(databasePath);
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
+export async function execute(text: string, params: QueryParams = {}, client?: Queryable) {
+  const runner = getRunner(client);
+  const compiled = compileNamedQuery(text, params);
+  const result = await runner.query(compiled.text, compiled.values);
+  return result.rowCount ?? 0;
 }
 
-export function getDb(): Database.Database {
+export function getDb(): Pool {
   if (dbInstance) {
     return dbInstance;
   }
 
-  const databasePath = resolveDatabasePath();
-  ensureDatabaseDirectory(databasePath);
-
-  dbInstance = new Database(databasePath);
-  dbInstance.pragma("foreign_keys = ON");
-  dbInstance.pragma("journal_mode = WAL");
+  const env = getEnv();
+  dbInstance = new Pool({
+    connectionString: env.DATABASE_URL,
+    max: 10,
+  });
 
   return dbInstance;
 }
 
-export function initializeDatabase() {
+export async function initializeDatabase() {
   if (initialized) {
     return;
   }
 
   const db = getDb();
-  migrateWebsiteSnapshotsToMultiSource(db);
-  db.exec(SCHEMA_SQL);
+  await db.query(SCHEMA_SQL);
   initialized = true;
 }
 
-export function parseJsonArray(value: string): string[] {
+export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>) {
+  const client = await getDb().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function withConnection<T>(callback: (client: PoolClient) => Promise<T>) {
+  const client = await getDb().connect();
+  try {
+    return await callback(client);
+  } finally {
+    client.release();
+  }
+}
+
+export async function tryAdvisoryLock(lockKey: string, client: PoolClient) {
+  const row = await queryOne<{ locked: boolean }>(
+    "SELECT pg_try_advisory_lock(hashtext(@lockKey)) AS locked",
+    { lockKey },
+    client,
+  );
+  return Boolean(row?.locked);
+}
+
+export async function advisoryUnlock(lockKey: string, client: PoolClient) {
+  await execute("SELECT pg_advisory_unlock(hashtext(@lockKey))", { lockKey }, client);
+}
+
+export async function closeDb() {
+  if (!dbInstance) {
+    return;
+  }
+
+  await dbInstance.end();
+  dbInstance = null;
+  initialized = false;
+}
+
+export function parseJsonArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];

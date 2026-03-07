@@ -1,4 +1,4 @@
-import { getDb, parseJsonArray } from "./db";
+import { parseJsonArray, query, queryOne } from "./db";
 
 type CompanyDetailRow = {
   id: number;
@@ -78,10 +78,8 @@ function cosineSimilarity(a: number[], b: number[]) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-export function getCompanyDetail(companyId: number) {
-  const db = getDb();
-  const row = db
-    .prepare<[{ id: number }], CompanyDetailRow>(`
+export async function getCompanyDetail(companyId: number) {
+  const row = await queryOne<CompanyDetailRow>(`
       SELECT
         c.id,
         c.name,
@@ -129,8 +127,7 @@ export function getCompanyDetail(companyId: number) {
       LEFT JOIN company_embeddings e ON e.company_id = c.id
       WHERE c.id = @id
       LIMIT 1
-    `)
-    .get({ id: companyId });
+    `, { id: companyId });
 
   if (!row) {
     return null;
@@ -155,21 +152,18 @@ export function getCompanyDetail(companyId: number) {
   };
 }
 
-export function getSimilarCompanies(companyId: number, limit = 8) {
-  const db = getDb();
-  const target = db
-    .prepare<[{ id: number }], { vector: string | null }>(
-      "SELECT vector FROM company_embeddings WHERE company_id = @id",
-    )
-    .get({ id: companyId });
+export async function getSimilarCompanies(companyId: number, limit = 8) {
+  const target = await queryOne<{ vector: string | null }>(
+    "SELECT vector FROM company_embeddings WHERE company_id = @id",
+    { id: companyId },
+  );
 
   if (!target?.vector) {
     return [];
   }
 
   const targetVector = JSON.parse(target.vector) as number[];
-  const candidates = db
-    .prepare<[{ id: number }], SimilarCandidateRow>(`
+  const candidates = await query<SimilarCandidateRow>(`
       SELECT
         c.id,
         c.name,
@@ -185,8 +179,7 @@ export function getSimilarCompanies(companyId: number, limit = 8) {
       FROM companies c
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE c.id != @id
-    `)
-    .all({ id: companyId });
+    `, { id: companyId });
 
   return candidates
     .map((candidate) => ({
