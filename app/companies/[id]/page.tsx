@@ -49,6 +49,7 @@ export default async function CompanyPage({
     ycUrl: company.url,
     snapshotWebsiteUrl: company.website_url_crawl4ai,
     contentMarkdown: company.content_markdown_crawl4ai,
+    additionalContentMarkdown: company.content_markdown_yc_profile,
   });
 
   return (
@@ -151,13 +152,65 @@ export default async function CompanyPage({
             </CardContent>
           </Card>
 
-          {company.content_markdown_crawl4ai ? (
+          {(company.yc_profile_socials.length > 0
+            || company.yc_profile_founders.length > 0
+            || company.yc_profile_news_items.length > 0
+            || company.yc_profile_launches.length > 0
+            || company.content_markdown_yc_profile) ? (
+              <Card className="border-border/70 bg-card/90">
+                <CardHeader>
+                  <CardTitle>YC live profile</CardTitle>
+                  <CardDescription>Structured data extracted from the live Y Combinator company page.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <InfoGrid
+                    items={[
+                      { label: "YC page", value: company.website_url_yc_profile ?? company.url, isLink: true },
+                      {
+                        label: "Last scraped",
+                        value: company.scraped_at_yc_profile
+                          ? new Date(company.scraped_at_yc_profile).toLocaleString()
+                          : null,
+                      },
+                    ]}
+                  />
+
+                  {company.yc_profile_socials.length > 0 ? (
+                    <StructuredLinkList title="Company socials" links={company.yc_profile_socials} />
+                  ) : null}
+
+                  {company.yc_profile_founders.length > 0 ? (
+                    <FounderList founders={company.yc_profile_founders} />
+                  ) : null}
+
+                  {company.yc_profile_news_items.length > 0 ? (
+                    <NewsList items={company.yc_profile_news_items} />
+                  ) : null}
+
+                  {company.yc_profile_launches.length > 0 ? (
+                    <LaunchList launches={company.yc_profile_launches} />
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : null}
+
+          {(company.content_markdown_crawl4ai || company.scrape_error_crawl4ai) ? (
             <SnapshotPreview
               source="Crawl4AI snapshot"
               websiteUrl={company.website_url_crawl4ai}
               scrapedAt={company.scraped_at_crawl4ai}
               scrapeError={company.scrape_error_crawl4ai}
               contentMarkdown={company.content_markdown_crawl4ai}
+            />
+          ) : null}
+
+          {(company.content_markdown_yc_profile || company.scrape_error_yc_profile) ? (
+            <SnapshotPreview
+              source="YC profile snapshot"
+              websiteUrl={company.website_url_yc_profile}
+              scrapedAt={company.scraped_at_yc_profile}
+              scrapeError={company.scrape_error_yc_profile}
+              contentMarkdown={company.content_markdown_yc_profile}
             />
           ) : null}
 
@@ -168,7 +221,7 @@ export default async function CompanyPage({
           <Card className="border-border/70 bg-card/90">
             <CardHeader>
               <CardTitle>Similar companies</CardTitle>
-              <CardDescription>Embedding-based neighbors over metadata and Crawl4AI-enriched content.</CardDescription>
+              <CardDescription>Embedding-based neighbors over metadata, website snapshots, and YC profile snapshots.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {similarCompanies.length === 0 ? (
@@ -269,6 +322,185 @@ function SectionList({ title, values }: { title: string; values: string[] }) {
   );
 }
 
+function StructuredLinkList({
+  title,
+  links,
+}: {
+  title: string;
+  links: Array<{ label: string; url: string }>;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {links.map((link) => (
+          <a
+            key={`${title}-${link.label}-${link.url}`}
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1.5 text-sm transition hover:text-primary"
+          >
+            <span>{link.label}</span>
+            <ExternalLink className="size-3.5" />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FounderList({
+  founders,
+}: {
+  founders: Array<{
+    fullName: string;
+    title: string | null;
+    linkedinUrl: string | null;
+    twitterUrl: string | null;
+    bio: string | null;
+  }>;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-muted-foreground">Active founders</h3>
+      <div className="mt-3 grid gap-4">
+        {founders.map((founder) => (
+          <div key={founder.fullName} className="rounded-2xl border border-border/70 bg-background/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">{founder.fullName}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{founder.title ?? "Founder"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {founder.linkedinUrl ? (
+                  <a
+                    href={founder.linkedinUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs transition hover:text-primary"
+                  >
+                    LinkedIn
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+                {founder.twitterUrl ? (
+                  <a
+                    href={founder.twitterUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs transition hover:text-primary"
+                  >
+                    X
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+            {founder.bio ? (
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{founder.bio}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewsList({
+  items,
+}: {
+  items: Array<{ title: string; date: string | null; url: string | null }>;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-muted-foreground">Recent news</h3>
+      <div className="mt-3 grid gap-3">
+        {items.map((item) => (
+          <div key={`${item.title}-${item.url ?? item.date ?? ""}`} className="rounded-2xl border border-border/70 bg-background/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium">{item.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{item.date ?? "Date unavailable"}</p>
+              </div>
+              {item.url ? (
+                <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm hover:text-primary">
+                  Open
+                  <ExternalLink className="size-3.5" />
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LaunchList({
+  launches,
+}: {
+  launches: Array<{
+    title: string;
+    publishedAt: string | null;
+    url: string | null;
+    ycLaunchUrl: string | null;
+    tagline: string | null;
+    body: string | null;
+  }>;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-muted-foreground">Company launches</h3>
+      <div className="mt-3 grid gap-4">
+        {launches.map((launch) => (
+          <div key={`${launch.title}-${launch.url ?? launch.publishedAt ?? ""}`} className="rounded-2xl border border-border/70 bg-background/55 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium">{launch.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{launch.tagline ?? "No tagline available."}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {launch.url ? (
+                  <a
+                    href={launch.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs transition hover:text-primary"
+                  >
+                    Launch
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+                {launch.ycLaunchUrl ? (
+                  <a
+                    href={launch.ycLaunchUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs transition hover:text-primary"
+                  >
+                    YC post
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+            <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              {launch.publishedAt ? `Published ${new Date(launch.publishedAt).toLocaleDateString()}` : "Published date unavailable"}
+            </p>
+            {launch.body ? (
+              <details className="mt-3 rounded-2xl border border-border/70 bg-background/65 p-3">
+                <summary className="cursor-pointer list-none text-sm font-medium">Show launch body</summary>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{launch.body}</p>
+              </details>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SnapshotPreview({
   source,
   websiteUrl,
@@ -290,7 +522,7 @@ function SnapshotPreview({
     <Card className="border-border/70 bg-card/90">
       <CardHeader>
         <CardTitle>{source}</CardTitle>
-        <CardDescription>Scraped content preview, extracted summary, and outbound links detected by Crawl4AI.</CardDescription>
+        <CardDescription>Scraped content preview, extracted summary, and outbound links detected from the stored snapshot.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <InfoGrid

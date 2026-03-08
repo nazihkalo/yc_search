@@ -1,5 +1,6 @@
 import { isPgVectorReady, parseJsonArray, query, queryOne } from "./db";
 import { parseVectorString } from "./vector-utils";
+import { parseYcCompanyProfileSnapshotMarkdown } from "./yc-company-page";
 
 type CompanyDetailRow = {
   id: number;
@@ -41,6 +42,10 @@ type CompanyDetailRow = {
   website_url_crawl4ai: string | null;
   scraped_at_crawl4ai: string | null;
   scrape_error_crawl4ai: string | null;
+  content_markdown_yc_profile: string | null;
+  website_url_yc_profile: string | null;
+  scraped_at_yc_profile: string | null;
+  scrape_error_yc_profile: string | null;
   vector: string | null;
 };
 
@@ -121,10 +126,16 @@ export async function getCompanyDetail(companyId: number) {
         s_crawl4ai.website_url AS website_url_crawl4ai,
         s_crawl4ai.scraped_at AS scraped_at_crawl4ai,
         s_crawl4ai.error AS scrape_error_crawl4ai,
+        s_yc_profile.content_markdown AS content_markdown_yc_profile,
+        s_yc_profile.website_url AS website_url_yc_profile,
+        s_yc_profile.scraped_at AS scraped_at_yc_profile,
+        s_yc_profile.error AS scrape_error_yc_profile,
         e.vector
       FROM companies c
       LEFT JOIN website_snapshots s_crawl4ai
         ON s_crawl4ai.company_id = c.id AND s_crawl4ai.source = 'crawl4ai'
+      LEFT JOIN website_snapshots s_yc_profile
+        ON s_yc_profile.company_id = c.id AND s_yc_profile.source = 'yc_profile'
       LEFT JOIN company_embeddings e ON e.company_id = c.id
       WHERE c.id = @id
       LIMIT 1
@@ -133,6 +144,10 @@ export async function getCompanyDetail(companyId: number) {
   if (!row) {
     return null;
   }
+
+  const ycProfile = row.content_markdown_yc_profile
+    ? parseYcCompanyProfileSnapshotMarkdown(row.content_markdown_yc_profile)
+    : { socials: [], founders: [], newsItems: [], launches: [] };
 
   return {
     ...row,
@@ -150,6 +165,10 @@ export async function getCompanyDetail(companyId: number) {
     demo_day_video_public: Boolean(row.demo_day_video_public),
     question_answers: Boolean(row.question_answers),
     launched_year: row.launched_at ? new Date(row.launched_at * 1000).getUTCFullYear() : null,
+    yc_profile_socials: ycProfile.socials,
+    yc_profile_founders: ycProfile.founders,
+    yc_profile_news_items: ycProfile.newsItems,
+    yc_profile_launches: ycProfile.launches,
   };
 }
 

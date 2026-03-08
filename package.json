@@ -13,6 +13,7 @@
     "db:import:sqlite": "tsx scripts/migrate-sqlite-to-postgres.ts",
     "sync:yc": "tsx scripts/sync-yc.ts",
     "sync:scrape": "tsx scripts/scrape-companies.ts",
+    "sync:scrape:yc-profile": "tsx scripts/scrape-yc-company-pages.ts",
     "test:crawl4ai:sample": "tsx scripts/test-crawl4ai-sample.ts",
     "sync:embed": "tsx scripts/embed-companies.ts",
     "sync:incremental": "tsx scripts/sync-incremental.ts",

@@ -2,6 +2,7 @@ import { advisoryUnlock, execute, initializeDatabase, query, queryOne, tryAdviso
 import { getSyncEmbedLimit, getSyncScrapeLimit } from "./env";
 import { embedCompanies, type EmbedSummary } from "../scripts/embed-companies";
 import { scrapeCompanies, type ScrapeSummary } from "../scripts/scrape-companies";
+import { scrapeYcCompanyPages, type YcProfileScrapeSummary } from "../scripts/scrape-yc-company-pages";
 import { syncYcCompanies, type SyncYcSummary } from "../scripts/sync-yc";
 
 const SYNC_LOCK_KEY = "yc_search_incremental_sync";
@@ -21,11 +22,31 @@ type SyncRunRow = {
   scrape_failed: number | null;
   scrape_changed: number | null;
   scrape_unchanged: number | null;
+  website_scrape_requested: number | null;
+  website_scrape_success: number | null;
+  website_scrape_failed: number | null;
+  website_scrape_changed: number | null;
+  website_scrape_unchanged: number | null;
+  yc_profile_scrape_requested: number | null;
+  yc_profile_scrape_success: number | null;
+  yc_profile_scrape_failed: number | null;
+  yc_profile_scrape_changed: number | null;
+  yc_profile_scrape_unchanged: number | null;
   embed_requested: number | null;
   embed_success: number | null;
   embed_skipped: number | null;
   error: string | null;
 };
+
+function combineScrapeSummaries(website: ScrapeSummary, ycProfile: YcProfileScrapeSummary): ScrapeSummary {
+  return {
+    requested: website.requested + ycProfile.requested,
+    successCount: website.successCount + ycProfile.successCount,
+    failureCount: website.failureCount + ycProfile.failureCount,
+    changedContentCount: website.changedContentCount + ycProfile.changedContentCount,
+    unchangedContentCount: website.unchangedContentCount + ycProfile.unchangedContentCount,
+  };
+}
 
 export type SyncRunSummary =
   | {
@@ -39,6 +60,8 @@ export type SyncRunSummary =
       embedLimit: number;
       yc: SyncYcSummary;
       scrape: ScrapeSummary;
+      websiteScrape: ScrapeSummary;
+      ycProfileScrape: YcProfileScrapeSummary;
       embed: EmbedSummary;
     }
   | {
@@ -99,7 +122,9 @@ export async function runIncrementalSync(options?: {
 
       try {
         const yc = await syncYcCompanies();
-        const scrape = await scrapeCompanies({ limit: scrapeLimit });
+        const websiteScrape = await scrapeCompanies({ limit: scrapeLimit });
+        const ycProfileScrape = await scrapeYcCompanyPages({ limit: scrapeLimit });
+        const scrape = combineScrapeSummaries(websiteScrape, ycProfileScrape);
         const embed = await embedCompanies({ limit: embedLimit });
 
         const finished = await queryOne<{ finished_at: string }>(
@@ -117,6 +142,16 @@ export async function runIncrementalSync(options?: {
               scrape_failed = @scrape_failed,
               scrape_changed = @scrape_changed,
               scrape_unchanged = @scrape_unchanged,
+              website_scrape_requested = @website_scrape_requested,
+              website_scrape_success = @website_scrape_success,
+              website_scrape_failed = @website_scrape_failed,
+              website_scrape_changed = @website_scrape_changed,
+              website_scrape_unchanged = @website_scrape_unchanged,
+              yc_profile_scrape_requested = @yc_profile_scrape_requested,
+              yc_profile_scrape_success = @yc_profile_scrape_success,
+              yc_profile_scrape_failed = @yc_profile_scrape_failed,
+              yc_profile_scrape_changed = @yc_profile_scrape_changed,
+              yc_profile_scrape_unchanged = @yc_profile_scrape_unchanged,
               embed_requested = @embed_requested,
               embed_success = @embed_success,
               embed_skipped = @embed_skipped,
@@ -135,6 +170,16 @@ export async function runIncrementalSync(options?: {
             scrape_failed: scrape.failureCount,
             scrape_changed: scrape.changedContentCount,
             scrape_unchanged: scrape.unchangedContentCount,
+            website_scrape_requested: websiteScrape.requested,
+            website_scrape_success: websiteScrape.successCount,
+            website_scrape_failed: websiteScrape.failureCount,
+            website_scrape_changed: websiteScrape.changedContentCount,
+            website_scrape_unchanged: websiteScrape.unchangedContentCount,
+            yc_profile_scrape_requested: ycProfileScrape.requested,
+            yc_profile_scrape_success: ycProfileScrape.successCount,
+            yc_profile_scrape_failed: ycProfileScrape.failureCount,
+            yc_profile_scrape_changed: ycProfileScrape.changedContentCount,
+            yc_profile_scrape_unchanged: ycProfileScrape.unchangedContentCount,
             embed_requested: embed.requested,
             embed_success: embed.embeddedCount,
             embed_skipped: embed.skippedCount,
@@ -152,6 +197,8 @@ export async function runIncrementalSync(options?: {
           embedLimit,
           yc,
           scrape,
+          websiteScrape,
+          ycProfileScrape,
           embed,
         };
       } catch (error) {
@@ -193,6 +240,16 @@ export async function getLatestSyncStatus() {
           scrape_failed,
           scrape_changed,
           scrape_unchanged,
+          website_scrape_requested,
+          website_scrape_success,
+          website_scrape_failed,
+          website_scrape_changed,
+          website_scrape_unchanged,
+          yc_profile_scrape_requested,
+          yc_profile_scrape_success,
+          yc_profile_scrape_failed,
+          yc_profile_scrape_changed,
+          yc_profile_scrape_unchanged,
           embed_requested,
           embed_success,
           embed_skipped,
@@ -208,10 +265,17 @@ export async function getLatestSyncStatus() {
         FROM sync_state
       `,
     ),
-    queryOne<{ pending_scrape: string | number; pending_embed: string | number }>(
+    queryOne<{
+      pending_scrape: string | number;
+      pending_website_scrape: string | number;
+      pending_yc_profile_scrape: string | number;
+      pending_embed: string | number;
+    }>(
       `
         SELECT
-          COUNT(*) FILTER (WHERE needs_scrape = 1) AS pending_scrape,
+          COUNT(*) FILTER (WHERE needs_website_scrape = 1 OR needs_yc_profile_scrape = 1) AS pending_scrape,
+          COUNT(*) FILTER (WHERE needs_website_scrape = 1) AS pending_website_scrape,
+          COUNT(*) FILTER (WHERE needs_yc_profile_scrape = 1) AS pending_yc_profile_scrape,
           COUNT(*) FILTER (WHERE needs_embed = 1) AS pending_embed
         FROM companies
       `,
@@ -222,6 +286,8 @@ export async function getLatestSyncStatus() {
     latestRun,
     backlog: {
       pendingScrape: Number(backlog?.pending_scrape ?? 0),
+      pendingWebsiteScrape: Number(backlog?.pending_website_scrape ?? 0),
+      pendingYcProfileScrape: Number(backlog?.pending_yc_profile_scrape ?? 0),
       pendingEmbed: Number(backlog?.pending_embed ?? 0),
     },
     syncState: Object.fromEntries(

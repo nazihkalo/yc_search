@@ -11,6 +11,7 @@ type BuildCompanyLinksInput = {
   ycUrl?: string | null;
   snapshotWebsiteUrl?: string | null;
   contentMarkdown?: string | null;
+  additionalContentMarkdown?: string | string[] | null;
 };
 
 function normalizeUrl(url: string) {
@@ -125,14 +126,20 @@ export function buildCompanyLinks({
   ycUrl,
   snapshotWebsiteUrl,
   contentMarkdown,
+  additionalContentMarkdown,
 }: BuildCompanyLinksInput): CompanyLink[] {
   const canonicalWebsite = normalizeUrl(website ?? "") ?? normalizeUrl(snapshotWebsiteUrl ?? "") ?? null;
   const canonicalWebsiteHost = getHostname(canonicalWebsite);
+  const markdownSources = [
+    contentMarkdown,
+    ...(Array.isArray(additionalContentMarkdown) ? additionalContentMarkdown : [additionalContentMarkdown]),
+  ].filter((value): value is string => Boolean(value && value.trim()));
+  const extractedUrls = markdownSources.flatMap((markdown) => extractUrlsFromMarkdown(markdown));
 
   const derived = [
     canonicalWebsite ? { label: "Website", url: canonicalWebsite, kind: "website" as const } : null,
     ycUrl ? { label: "YC", url: ycUrl, kind: "yc" as const } : null,
-    ...(contentMarkdown ? extractUrlsFromMarkdown(contentMarkdown).map((url) => classifyUrl(url, canonicalWebsiteHost)) : []),
+    ...extractedUrls.map((url) => classifyUrl(url, canonicalWebsiteHost)),
   ].filter((item): item is CompanyLink => Boolean(item));
 
   const unique = dedupeLinks(derived);

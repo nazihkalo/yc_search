@@ -17,6 +17,10 @@ export type SyncYcSummary = {
   unchanged: number;
 };
 
+function hasValue(value: string | null | undefined) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 export async function syncYcCompanies(): Promise<SyncYcSummary> {
   await initializeDatabase();
   const companies = await fetchYcCompanies();
@@ -35,6 +39,7 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
         name: company.name,
         slug: company.slug,
         former_names: company.former_names,
+        small_logo_thumb_url: company.small_logo_thumb_url ?? null,
         website: company.website ?? null,
         all_locations: company.all_locations ?? null,
         long_description: company.long_description ?? null,
@@ -66,6 +71,9 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
       const existingHash = existingHashById.get(company.id);
       const isNew = !existingHash;
       const changed = existingHash !== companyHash;
+      const needsWebsiteScrape = (isNew || changed) && hasValue(company.website);
+      const needsYcProfileScrape = (isNew || changed) && hasValue(company.url);
+      const needsScrape = needsWebsiteScrape || needsYcProfileScrape;
 
       if (isNew) {
         inserted += 1;
@@ -110,6 +118,8 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
           search_text,
           company_hash,
           needs_scrape,
+          needs_website_scrape,
+          needs_yc_profile_scrape,
           needs_embed,
           updated_at
         ) VALUES (
@@ -146,6 +156,8 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
           @search_text,
           @company_hash,
           @needs_scrape,
+          @needs_website_scrape,
+          @needs_yc_profile_scrape,
           @needs_embed,
           NOW()
         )
@@ -182,6 +194,8 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
           search_text = EXCLUDED.search_text,
           company_hash = EXCLUDED.company_hash,
           needs_scrape = EXCLUDED.needs_scrape,
+          needs_website_scrape = EXCLUDED.needs_website_scrape,
+          needs_yc_profile_scrape = EXCLUDED.needs_yc_profile_scrape,
           needs_embed = EXCLUDED.needs_embed,
           updated_at = NOW()
       `, {
@@ -217,7 +231,9 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
         api: company.api ?? null,
         search_text: buildCompanySearchText(company),
         company_hash: companyHash,
-        needs_scrape: isNew || changed ? 1 : 0,
+        needs_scrape: needsScrape ? 1 : 0,
+        needs_website_scrape: needsWebsiteScrape ? 1 : 0,
+        needs_yc_profile_scrape: needsYcProfileScrape ? 1 : 0,
         needs_embed: isNew || changed ? 1 : 0,
       }, client);
     }

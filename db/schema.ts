@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS companies (
   search_text TEXT NOT NULL DEFAULT '',
   company_hash TEXT NOT NULL DEFAULT '',
   needs_scrape INTEGER NOT NULL DEFAULT 1,
+  needs_website_scrape INTEGER NOT NULL DEFAULT 1,
+  needs_yc_profile_scrape INTEGER NOT NULL DEFAULT 1,
   needs_embed INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -93,11 +95,35 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   scrape_failed INTEGER,
   scrape_changed INTEGER,
   scrape_unchanged INTEGER,
+  website_scrape_requested INTEGER,
+  website_scrape_success INTEGER,
+  website_scrape_failed INTEGER,
+  website_scrape_changed INTEGER,
+  website_scrape_unchanged INTEGER,
+  yc_profile_scrape_requested INTEGER,
+  yc_profile_scrape_success INTEGER,
+  yc_profile_scrape_failed INTEGER,
+  yc_profile_scrape_changed INTEGER,
+  yc_profile_scrape_unchanged INTEGER,
   embed_requested INTEGER,
   embed_success INTEGER,
   embed_skipped INTEGER,
   error TEXT
 );
+
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS needs_website_scrape INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS needs_yc_profile_scrape INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_requested INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_success INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_failed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_changed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_unchanged INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_requested INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_success INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_failed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_changed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_unchanged INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_companies_batch ON companies(batch);
 CREATE INDEX IF NOT EXISTS idx_companies_launched_at ON companies(launched_at);
@@ -108,6 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_companies_top_company ON companies(top_company);
 CREATE INDEX IF NOT EXISTS idx_companies_industry ON companies(industry);
 CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_scrape ON companies(needs_scrape);
+CREATE INDEX IF NOT EXISTS idx_companies_needs_website_scrape ON companies(needs_website_scrape);
+CREATE INDEX IF NOT EXISTS idx_companies_needs_yc_profile_scrape ON companies(needs_yc_profile_scrape);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_embed ON companies(needs_embed);
 CREATE INDEX IF NOT EXISTS idx_snapshots_company_id ON website_snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_content_hash ON website_snapshots(content_hash);

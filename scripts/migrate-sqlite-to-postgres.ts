@@ -40,6 +40,8 @@ type CompanyRow = {
   search_text: string;
   company_hash: string;
   needs_scrape: number;
+  needs_website_scrape?: number;
+  needs_yc_profile_scrape?: number;
   needs_embed: number;
   created_at: string | null;
   updated_at: string | null;
@@ -255,6 +257,8 @@ async function main() {
                 search_text,
                 company_hash,
                 needs_scrape,
+                needs_website_scrape,
+                needs_yc_profile_scrape,
                 needs_embed,
                 created_at,
                 updated_at
@@ -292,6 +296,8 @@ async function main() {
                 @search_text,
                 @company_hash,
                 @needs_scrape,
+                @needs_website_scrape,
+                @needs_yc_profile_scrape,
                 @needs_embed,
                 COALESCE(@created_at, NOW()::text)::timestamptz,
                 COALESCE(@updated_at, NOW()::text)::timestamptz
@@ -329,11 +335,17 @@ async function main() {
                 search_text = EXCLUDED.search_text,
                 company_hash = EXCLUDED.company_hash,
                 needs_scrape = EXCLUDED.needs_scrape,
+                needs_website_scrape = EXCLUDED.needs_website_scrape,
+                needs_yc_profile_scrape = EXCLUDED.needs_yc_profile_scrape,
                 needs_embed = EXCLUDED.needs_embed,
                 created_at = EXCLUDED.created_at,
                 updated_at = EXCLUDED.updated_at
             `,
-            row,
+            {
+              ...row,
+              needs_website_scrape: row.needs_website_scrape ?? row.needs_scrape,
+              needs_yc_profile_scrape: row.needs_yc_profile_scrape ?? row.needs_scrape,
+            },
             client,
           );
         },

@@ -5,7 +5,7 @@ import pLimit from "p-limit";
 import { closeDb, execute, initializeDatabase, query, queryOne } from "../lib/db";
 import { sha256 } from "../lib/hash";
 import { EMBEDDING_MODEL, getOpenAiClient } from "../lib/openai";
-import { ACTIVE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
+import { WEBSITE_SNAPSHOT_SOURCE, YC_PROFILE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
 import { toVectorLiteral } from "../lib/vector-utils";
 
 type EmbedCandidate = {
@@ -21,7 +21,8 @@ type EmbedCandidate = {
   batch: string | null;
   status: string | null;
   all_locations: string | null;
-  content_markdown: string | null;
+  website_content_markdown: string | null;
+  yc_profile_content_markdown: string | null;
 };
 
 function parseLimitArg(defaultLimit = 500): number {
@@ -46,7 +47,8 @@ function buildEmbeddingText(candidate: EmbedCandidate): string {
   const tags = parseJsonArray(candidate.tags).join(", ");
   const industries = parseJsonArray(candidate.industries).join(", ");
   const regions = parseJsonArray(candidate.regions).join(", ");
-  const websiteContent = (candidate.content_markdown ?? "").slice(0, 10_000);
+  const websiteContent = (candidate.website_content_markdown ?? "").slice(0, 8_000);
+  const ycProfileContent = (candidate.yc_profile_content_markdown ?? "").slice(0, 8_000);
 
   return [
     `Company: ${candidate.name}`,
@@ -61,6 +63,7 @@ function buildEmbeddingText(candidate: EmbedCandidate): string {
     `Status: ${candidate.status ?? ""}`,
     `Location: ${candidate.all_locations ?? ""}`,
     `Website content: ${websiteContent}`,
+    `YC profile content: ${ycProfileContent}`,
   ].join("\n");
 }
 
@@ -73,7 +76,6 @@ export type EmbedSummary = {
 export async function embedCompanies(options?: { limit?: number }): Promise<EmbedSummary> {
   await initializeDatabase();
   const openai = getOpenAiClient();
-  const source = ACTIVE_SNAPSHOT_SOURCE;
 
   const batchLimit = options?.limit ?? parseLimitArg();
   const candidates = await query<EmbedCandidate>(`
@@ -90,13 +92,21 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
         c.batch,
         c.status,
         c.all_locations,
-        s.content_markdown
+        s_website.content_markdown AS website_content_markdown,
+        s_yc_profile.content_markdown AS yc_profile_content_markdown
       FROM companies c
-      LEFT JOIN website_snapshots s ON s.company_id = c.id AND s.source = @source
+      LEFT JOIN website_snapshots s_website
+        ON s_website.company_id = c.id AND s_website.source = @website_source
+      LEFT JOIN website_snapshots s_yc_profile
+        ON s_yc_profile.company_id = c.id AND s_yc_profile.source = @yc_profile_source
       WHERE c.needs_embed = 1
       ORDER BY c.id ASC
       LIMIT @limit
-    `, { limit: batchLimit, source });
+    `, {
+    limit: batchLimit,
+    website_source: WEBSITE_SNAPSHOT_SOURCE,
+    yc_profile_source: YC_PROFILE_SNAPSHOT_SOURCE,
+  });
 
   if (candidates.length === 0) {
     console.log("No companies need embeddings.");

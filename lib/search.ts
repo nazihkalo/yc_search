@@ -3,6 +3,7 @@ import { EMBEDDING_MODEL, getOpenAiClient } from "./openai";
 import { buildCompanyLinks } from "./company-links";
 import { sha256 } from "./hash";
 import { extractDescriptionFromMarkdown } from "./snapshot-utils";
+import { WEBSITE_SNAPSHOT_SOURCE, YC_PROFILE_SNAPSHOT_SOURCE } from "./snapshot-source";
 import type { CompanyRecord } from "./types";
 import {
   EMBEDDING_DIMENSIONS,
@@ -42,6 +43,22 @@ type AnalyticsCompanyRow = {
   tags: string;
   industries: string;
 };
+
+const COMBINED_SNAPSHOT_SELECT_SQL = `
+  CONCAT_WS(
+    E'\\n\\n',
+    NULLIF(s_crawl4ai.content_markdown, ''),
+    NULLIF(s_yc_profile.content_markdown, '')
+  ) AS content_markdown,
+  COALESCE(s_crawl4ai.website_url, s_yc_profile.website_url) AS website_url
+`;
+
+const COMBINED_SNAPSHOT_JOIN_SQL = `
+  LEFT JOIN website_snapshots s_crawl4ai
+    ON s_crawl4ai.company_id = c.id AND s_crawl4ai.source = '${WEBSITE_SNAPSHOT_SOURCE}'
+  LEFT JOIN website_snapshots s_yc_profile
+    ON s_yc_profile.company_id = c.id AND s_yc_profile.source = '${YC_PROFILE_SNAPSHOT_SOURCE}'
+`;
 
 function buildFilterWhereClause(
   filters: SearchFilters,
@@ -337,11 +354,9 @@ export async function keywordSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
-        s.content_markdown,
-        s.website_url
+        ${COMBINED_SNAPSHOT_SELECT_SQL}
       FROM companies c
-      LEFT JOIN website_snapshots s
-        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      ${COMBINED_SNAPSHOT_JOIN_SQL}
       WHERE ${whereSql}
       ${buildSortClause(params.sort, searchQuery)}
       LIMIT @limit OFFSET @offset
@@ -496,12 +511,10 @@ async function semanticSearchLegacy(params: SearchParams, queryVectorLiteral: st
         c.url,
         c.small_logo_thumb_url,
         c.status,
-        s.content_markdown,
-        s.website_url,
+        ${COMBINED_SNAPSHOT_SELECT_SQL},
         e.vector
       FROM companies c
-      LEFT JOIN website_snapshots s
-        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      ${COMBINED_SNAPSHOT_JOIN_SQL}
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereClauses.join(" AND ")}
     `, queryParams);
@@ -571,12 +584,10 @@ async function hybridSearchLegacy(params: SearchParams, queryVectorLiteral: stri
         c.url,
         c.small_logo_thumb_url,
         c.status,
-        s.content_markdown,
-        s.website_url,
+        ${COMBINED_SNAPSHOT_SELECT_SQL},
         e.vector
       FROM companies c
-      LEFT JOIN website_snapshots s
-        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      ${COMBINED_SNAPSHOT_JOIN_SQL}
       LEFT JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereClauses.join(" AND ")}
     `, queryParams);
@@ -672,12 +683,10 @@ export async function semanticSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
-        s.content_markdown,
-        s.website_url,
+        ${COMBINED_SNAPSHOT_SELECT_SQL},
         1 - (e.vector <=> @query_vector::vector(1536)) AS score
       FROM companies c
-      LEFT JOIN website_snapshots s
-        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      ${COMBINED_SNAPSHOT_JOIN_SQL}
       INNER JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${whereClauses.join(" AND ")}
       ${buildSemanticSortClause(params.sort)}
@@ -752,12 +761,10 @@ export async function hybridSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
-        s.content_markdown,
-        s.website_url,
+        ${COMBINED_SNAPSHOT_SELECT_SQL},
         ${hybridScoreSql} AS hybrid_score
       FROM companies c
-      LEFT JOIN website_snapshots s
-        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      ${COMBINED_SNAPSHOT_JOIN_SQL}
       LEFT JOIN company_embeddings e ON e.company_id = c.id
       WHERE ${rankableWhereSql}
       ${buildHybridSortClause(params.sort)}
@@ -952,11 +959,9 @@ export async function answerCompanyQuestion(
         c.url,
         c.one_liner,
         c.long_description,
-        s.website_url,
-        s.content_markdown
+        ${COMBINED_SNAPSHOT_SELECT_SQL}
       FROM companies c
-      LEFT JOIN website_snapshots s
-        ON s.company_id = c.id AND s.source = 'crawl4ai'
+      ${COMBINED_SNAPSHOT_JOIN_SQL}
       WHERE c.id IN (${placeholders.join(", ")})
     `, idParams);
 
