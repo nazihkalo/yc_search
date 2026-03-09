@@ -1,5 +1,5 @@
 import { advisoryUnlock, execute, initializeDatabase, query, queryOne, tryAdvisoryLock, withConnection } from "./db";
-import { getSyncEmbedLimit, getSyncScrapeLimit } from "./env";
+import { getSyncEmbedLimit, getSyncRunTimeoutMs, getSyncScrapeLimit } from "./env";
 import { embedCompanies, type EmbedSummary } from "../scripts/embed-companies";
 import { scrapeCompanies, type ScrapeSummary } from "../scripts/scrape-companies";
 import { scrapeYcCompanyPages, type YcProfileScrapeSummary } from "../scripts/scrape-yc-company-pages";
@@ -48,6 +48,23 @@ function combineScrapeSummaries(website: ScrapeSummary, ycProfile: YcProfileScra
   };
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label} exceeded timeout of ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 export type SyncRunSummary =
   | {
       ok: true;
@@ -83,6 +100,7 @@ export async function runIncrementalSync(options?: {
   const trigger = options?.trigger ?? "manual";
   const scrapeLimit = options?.scrapeLimit ?? getSyncScrapeLimit();
   const embedLimit = options?.embedLimit ?? getSyncEmbedLimit();
+  const runTimeoutMs = getSyncRunTimeoutMs();
 
   return withConnection(async (client) => {
     const locked = await tryAdvisoryLock(SYNC_LOCK_KEY, client);
@@ -121,11 +139,24 @@ export async function runIncrementalSync(options?: {
       }
 
       try {
-        const yc = await syncYcCompanies();
-        const websiteScrape = await scrapeCompanies({ limit: scrapeLimit });
-        const ycProfileScrape = await scrapeYcCompanyPages({ limit: scrapeLimit });
-        const scrape = combineScrapeSummaries(websiteScrape, ycProfileScrape);
-        const embed = await embedCompanies({ limit: embedLimit });
+        const { yc, websiteScrape, ycProfileScrape, scrape, embed } = await withTimeout(
+          (async () => {
+            const ycResult = await syncYcCompanies();
+            const websiteScrapeResult = await scrapeCompanies({ limit: scrapeLimit });
+            const ycProfileScrapeResult = await scrapeYcCompanyPages({ limit: scrapeLimit });
+            const scrapeResult = combineScrapeSummaries(websiteScrapeResult, ycProfileScrapeResult);
+            const embedResult = await embedCompanies({ limit: embedLimit });
+            return {
+              yc: ycResult,
+              websiteScrape: websiteScrapeResult,
+              ycProfileScrape: ycProfileScrapeResult,
+              scrape: scrapeResult,
+              embed: embedResult,
+            };
+          })(),
+          runTimeoutMs,
+          "Incremental sync run",
+        );
 
         const finished = await queryOne<{ finished_at: string }>(
           `

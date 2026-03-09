@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { getYcProfileFetchTimeoutMs } from "./env";
+
 const nullableString = z.string().nullable().optional().transform((value) => normalizeString(value ?? null));
 
 const ycFounderSchema = z.object({
@@ -195,14 +197,32 @@ function parseIndentedField(lines: string[], startIndex: number, label: string) 
   return { value: value || null, nextIndex: index };
 }
 
-export async function fetchYcCompanyProfileSnapshot(profileUrl: string): Promise<YcCompanyProfileSnapshot> {
-  const response = await fetch(profileUrl, {
-    headers: {
-      Accept: "text/html,application/xhtml+xml",
-      "User-Agent": "Mozilla/5.0 (compatible; yc_search/1.0; +https://www.ycombinator.com)",
-    },
-    cache: "no-store",
-  });
+export async function fetchYcCompanyProfileSnapshot(
+  profileUrl: string,
+  options?: { timeoutMs?: number },
+): Promise<YcCompanyProfileSnapshot> {
+  const timeoutMs = options?.timeoutMs ?? getYcProfileFetchTimeoutMs();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(profileUrl, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": "Mozilla/5.0 (compatible; yc_search/1.0; +https://www.ycombinator.com)",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`YC profile fetch timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to fetch YC company page (${response.status})`);

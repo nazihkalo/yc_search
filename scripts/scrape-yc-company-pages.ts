@@ -2,7 +2,8 @@ import { pathToFileURL } from "node:url";
 
 import pLimit from "p-limit";
 
-import { closeDb, execute, initializeDatabase, query, queryOne } from "../lib/db";
+import { closeDb, execute, initializeDatabase, query, queryOne, withTransaction } from "../lib/db";
+import { getYcProfileFetchRetries, getYcProfileFetchTimeoutMs } from "../lib/env";
 import { sha256 } from "../lib/hash";
 import { YC_PROFILE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
 import { fetchYcCompanyProfileSnapshot } from "../lib/yc-company-page";
@@ -33,6 +34,24 @@ function renderProgressBar(completed: number, total: number, width = 20) {
   return `[${"#".repeat(filled)}${"-".repeat(Math.max(0, width - filled))}]`;
 }
 
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableScrapeError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("timed out") ||
+    message.includes("fetch failed") ||
+    message.includes("ECONNRESET") ||
+    message.includes("ETIMEDOUT") ||
+    message.includes("429") ||
+    message.includes("503") ||
+    message.includes("502") ||
+    message.includes("504")
+  );
+}
+
 function parseLimitArg(defaultLimit = 500): number {
   const argument = process.argv.find((value) => value.startsWith("--limit="));
   if (!argument) {
@@ -53,6 +72,8 @@ export type YcProfileScrapeSummary = {
 export async function scrapeYcCompanyPages(options?: { limit?: number }): Promise<YcProfileScrapeSummary> {
   await initializeDatabase();
   const source = YC_PROFILE_SNAPSHOT_SOURCE;
+  const fetchTimeoutMs = getYcProfileFetchTimeoutMs();
+  const fetchRetries = getYcProfileFetchRetries();
 
   const batchLimit = options?.limit ?? parseLimitArg();
   const candidates = await query<ScrapeCandidate>(`
@@ -129,70 +150,91 @@ export async function scrapeYcCompanyPages(options?: { limit?: number }): Promis
         }
 
         try {
-          const snapshot = await fetchYcCompanyProfileSnapshot(profileUrl);
+          let snapshot: Awaited<ReturnType<typeof fetchYcCompanyProfileSnapshot>> | null = null;
+          let lastError: unknown = null;
+          for (let attempt = 1; attempt <= fetchRetries; attempt += 1) {
+            try {
+              snapshot = await fetchYcCompanyProfileSnapshot(profileUrl, { timeoutMs: fetchTimeoutMs });
+              break;
+            } catch (error) {
+              lastError = error;
+              if (attempt === fetchRetries || !isRetryableScrapeError(error)) {
+                throw error;
+              }
+              await sleep(500 * attempt);
+            }
+          }
+
+          if (!snapshot) {
+            throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "Unknown scrape failure"));
+          }
+
           const contentHash = sha256(snapshot.markdown);
 
-          const previous = await queryOne<{ content_hash: string }>(`
-            SELECT content_hash
-            FROM website_snapshots
-            WHERE company_id = @id AND source = @source
-          `, { id: candidate.id, source });
+          let contentChanged = false;
+          await withTransaction(async (client) => {
+            const previous = await queryOne<{ content_hash: string }>(`
+              SELECT content_hash
+              FROM website_snapshots
+              WHERE company_id = @id AND source = @source
+            `, { id: candidate.id, source }, client);
 
-          const contentChanged = !previous || previous.content_hash !== contentHash;
+            contentChanged = !previous || previous.content_hash !== contentHash;
 
-          await execute(`
-            INSERT INTO website_snapshots (
-              company_id,
-              website_url,
-              content_markdown,
-              content_hash,
+            await execute(`
+              INSERT INTO website_snapshots (
+                company_id,
+                website_url,
+                content_markdown,
+                content_hash,
+                source,
+                error,
+                scraped_at,
+                updated_at
+              ) VALUES (
+                @company_id,
+                @website_url,
+                @content_markdown,
+                @content_hash,
+                @source,
+                @error,
+                NOW(),
+                NOW()
+              )
+              ON CONFLICT(company_id, source) DO UPDATE SET
+                website_url = EXCLUDED.website_url,
+                content_markdown = EXCLUDED.content_markdown,
+                content_hash = EXCLUDED.content_hash,
+                source = EXCLUDED.source,
+                error = EXCLUDED.error,
+                scraped_at = NOW(),
+                updated_at = NOW()
+            `, {
+              company_id: candidate.id,
+              website_url: profileUrl,
+              content_markdown: snapshot.markdown,
+              content_hash: contentHash,
               source,
-              error,
-              scraped_at,
-              updated_at
-            ) VALUES (
-              @company_id,
-              @website_url,
-              @content_markdown,
-              @content_hash,
-              @source,
-              @error,
-              NOW(),
-              NOW()
-            )
-            ON CONFLICT(company_id, source) DO UPDATE SET
-              website_url = EXCLUDED.website_url,
-              content_markdown = EXCLUDED.content_markdown,
-              content_hash = EXCLUDED.content_hash,
-              source = EXCLUDED.source,
-              error = EXCLUDED.error,
-              scraped_at = NOW(),
-              updated_at = NOW()
-          `, {
-            company_id: candidate.id,
-            website_url: profileUrl,
-            content_markdown: snapshot.markdown,
-            content_hash: contentHash,
-            source,
-            error: null,
-          });
+              error: null,
+            }, client);
 
-          await execute(`
-            UPDATE companies
-            SET
-              needs_scrape = needs_website_scrape,
-              needs_yc_profile_scrape = 0,
-              updated_at = NOW()
-            WHERE id = @id
-          `, { id: candidate.id });
-
-          if (contentChanged) {
             await execute(`
               UPDATE companies
-              SET needs_embed = 1, updated_at = NOW()
+              SET
+                needs_scrape = needs_website_scrape,
+                needs_yc_profile_scrape = 0,
+                updated_at = NOW()
               WHERE id = @id
-            `, { id: candidate.id });
-          }
+            `, { id: candidate.id }, client);
+
+            if (contentChanged) {
+              await execute(`
+                UPDATE companies
+                SET needs_embed = 1, updated_at = NOW()
+                WHERE id = @id
+              `, { id: candidate.id }, client);
+            }
+          });
 
           successCount += 1;
           if (contentChanged) {

@@ -8,6 +8,9 @@ const baseEnvSchema = z.object({
   SQLITE_IMPORT_PATH: z.string().optional(),
   SYNC_SCRAPE_LIMIT: z.string().optional(),
   SYNC_EMBED_LIMIT: z.string().optional(),
+  SYNC_RUN_TIMEOUT_MS: z.string().optional(),
+  YC_PROFILE_FETCH_TIMEOUT_MS: z.string().optional(),
+  YC_PROFILE_FETCH_RETRIES: z.string().optional(),
 });
 
 function parseBaseEnv() {
@@ -17,6 +20,9 @@ function parseBaseEnv() {
     SQLITE_IMPORT_PATH: process.env.SQLITE_IMPORT_PATH,
     SYNC_SCRAPE_LIMIT: process.env.SYNC_SCRAPE_LIMIT,
     SYNC_EMBED_LIMIT: process.env.SYNC_EMBED_LIMIT,
+    SYNC_RUN_TIMEOUT_MS: process.env.SYNC_RUN_TIMEOUT_MS,
+    YC_PROFILE_FETCH_TIMEOUT_MS: process.env.YC_PROFILE_FETCH_TIMEOUT_MS,
+    YC_PROFILE_FETCH_RETRIES: process.env.YC_PROFILE_FETCH_RETRIES,
   });
 }
 
@@ -46,6 +52,18 @@ export function getSyncScrapeLimit() {
 
 export function getSyncEmbedLimit() {
   return parsePositiveInt(process.env.SYNC_EMBED_LIMIT, 50);
+}
+
+export function getSyncRunTimeoutMs() {
+  return parsePositiveInt(process.env.SYNC_RUN_TIMEOUT_MS, 45 * 60 * 1000);
+}
+
+export function getYcProfileFetchTimeoutMs() {
+  return parsePositiveInt(process.env.YC_PROFILE_FETCH_TIMEOUT_MS, 45_000);
+}
+
+export function getYcProfileFetchRetries() {
+  return parsePositiveInt(process.env.YC_PROFILE_FETCH_RETRIES, 2);
 }
 
 export function getOpenAiApiKey() {
