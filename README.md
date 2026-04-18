@@ -6,8 +6,6 @@ Live app: [ycsearch-production.up.railway.app](https://ycsearch-production.up.ra
 
 https://github.com/user-attachments/assets/f47b288e-c32e-4899-932d-ecf423372088
 
-*(Updated product tour — drag `video/renders/yc-search-tour.mp4` into this PR description to replace the link above with the new clip.)*
-
 The full source for the tour (HyperFrames composition + script + storyboard + narration pipeline) lives in [`video/`](./video/). See [`video/HANDOFF.md`](./video/HANDOFF.md).
 
 ## Features
