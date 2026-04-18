@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { badgeStyleFor } from "../../../lib/colors";
-import { getSimilarCompanies } from "../../../lib/company-details";
-import { Badge } from "../../../components/ui/badge";
+import { badgeStyleFor } from "../../../../lib/colors";
+import { getSimilarCompanies } from "../../../../lib/company-details";
+import { Badge } from "../../../../components/ui/badge";
 
 export async function SimilarCompaniesPanel({ companyId }: { companyId: number }) {
   const similar = await getSimilarCompanies(companyId, 8);

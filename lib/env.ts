@@ -16,6 +16,9 @@ const baseEnvSchema = z.object({
   SYNC_EXA_LIMIT: z.string().optional(),
   GITHUB_TOKEN: z.string().optional(),
   EXA_API_KEY: z.string().optional(),
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
+  CLERK_SECRET_KEY: z.string().optional(),
+  CLERK_WEBHOOK_SECRET: z.string().optional(),
 });
 
 function parseBaseEnv() {
@@ -33,7 +36,18 @@ function parseBaseEnv() {
     SYNC_EXA_LIMIT: process.env.SYNC_EXA_LIMIT,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
     EXA_API_KEY: process.env.EXA_API_KEY,
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    CLERK_WEBHOOK_SECRET: process.env.CLERK_WEBHOOK_SECRET,
   });
+}
+
+export function getClerkWebhookSecret() {
+  const value = process.env.CLERK_WEBHOOK_SECRET?.trim();
+  if (!value) {
+    throw new Error("CLERK_WEBHOOK_SECRET is required to receive Clerk webhooks");
+  }
+  return value;
 }
 
 export function getEnv() {

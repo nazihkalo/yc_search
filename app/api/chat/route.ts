@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { recordUsage, requirePlan } from "../../../lib/auth";
 import { initializeDatabase } from "../../../lib/db";
 import { answerCompanyQuestion } from "../../../lib/search";
 
@@ -24,8 +25,14 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const { userId, allowed } = await requirePlan("free");
+    if (!allowed || !userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     await initializeDatabase();
     const body = bodySchema.parse(await request.json());
+    recordUsage(userId, "api.chat");
     const response = await answerCompanyQuestion(
       body.question,
       {

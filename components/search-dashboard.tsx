@@ -299,7 +299,7 @@ export function SearchDashboard() {
   }, [baseQueryString]);
 
   const returnToPath = useMemo(
-    () => `/?${view === "table" ? tableQueryString : baseQueryString}`,
+    () => `/dashboard?${view === "table" ? tableQueryString : baseQueryString}`,
     [baseQueryString, tableQueryString, view],
   );
 
