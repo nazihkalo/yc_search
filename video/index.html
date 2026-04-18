@@ -1,0 +1,1794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>YC Search — Product Tour</title>
+<style>
+  /* ============================================================
+     GLOBAL
+     ============================================================ */
+  body {
+    margin: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #0A1018;
+    font-family: "Space Grotesk", sans-serif;
+    color: #EBEFF5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .scene {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #0A1018;
+  }
+  #scene1 { z-index: 1; }
+  #scene2 { z-index: 2; opacity: 0; }
+  #scene3 { z-index: 3; opacity: 0; }
+  #scene4 { z-index: 4; opacity: 0; }
+  #scene5 { z-index: 5; opacity: 0; }
+  #scene6 { z-index: 6; opacity: 0; }
+
+  /* Global reusable components */
+  .dot-grid {
+    position: absolute;
+    inset: -40px;
+    background-image: radial-gradient(circle, rgba(168, 188, 218, 0.06) 1px, transparent 1.4px);
+    background-size: 44px 44px;
+    pointer-events: none;
+  }
+  .vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at center, rgba(10,16,24,0) 40%, rgba(10,16,24,0.55) 100%);
+  }
+  .cursor {
+    position: absolute;
+    width: 22px;
+    height: 28px;
+    pointer-events: none;
+    will-change: transform;
+    z-index: 50;
+  }
+  .cursor svg { width: 100%; height: 100%; display: block; }
+  .ripple {
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: transparent;
+    border: 2px solid #599BFF;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .yc-logo-square {
+    display: inline-block;
+    width: 36px;
+    height: 36px;
+    background: #EA5B21;
+    border-radius: 8px;
+    position: relative;
+  }
+  .yc-logo-square svg {
+    position: absolute;
+    inset: 3px;
+  }
+  .uiLabel {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #A7ABB1;
+  }
+  .mono {
+    font-family: "Space Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============================================================
+     SCENE 1 — HOOK  (0 → 5.42s)
+     ============================================================ */
+  .s1-plate-table {
+    position: absolute;
+    top: 60px; left: 160px;
+    width: 1600px; height: 960px;
+    background-size: cover;
+    background-position: top center;
+    border-radius: 28px;
+    opacity: 0;
+    filter: blur(24px);
+    transform: scale(0.95);
+  }
+  .s1-counter-wrap {
+    position: absolute;
+    top: 280px;
+    left: 0;
+    width: 1920px;
+    text-align: center;
+    z-index: 10;
+  }
+  .s1-counter {
+    width: 820px;
+    height: 280px;
+    overflow: hidden;
+    position: relative;
+    margin: 0 auto;
+  }
+  .s1-counter-track {
+    position: absolute;
+    left: 0; right: 0;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    font-family: "Space Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 260px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #EBEFF5;
+    line-height: 280px;
+    will-change: transform;
+  }
+  .s1-counter-row {
+    height: 280px;
+    flex-shrink: 0;
+  }
+  .s1-counter-label {
+    margin-top: 34px;
+    font-size: 18px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #A7ABB1;
+    opacity: 0;
+  }
+  .s1-search-bar {
+    position: absolute;
+    top: 460px;
+    left: 360px;
+    width: 1200px;
+    height: 92px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    padding: 0 30px;
+    gap: 18px;
+    opacity: 0;
+    transform: translateY(-140px);
+    filter: blur(24px);
+  }
+  .s1-search-icon {
+    width: 28px; height: 28px;
+    color: #A7ABB1;
+    flex-shrink: 0;
+  }
+  .s1-search-placeholder {
+    font-size: 26px;
+    font-weight: 400;
+    color: #A7ABB1;
+    opacity: 0;
+  }
+  .s1-search-placeholder .try-label {
+    color: #9AA1AC;
+    margin-right: 12px;
+  }
+  .s1-caret {
+    position: absolute;
+    right: 36px;
+    top: 22px;
+    width: 2px;
+    height: 48px;
+    background: #599BFF;
+    opacity: 0;
+  }
+  .s1-focus-ring {
+    position: absolute;
+    inset: -4px;
+    border-radius: 24px;
+    box-shadow: 0 0 0 3px rgba(35, 102, 233, 0.45);
+    pointer-events: none;
+    opacity: 0;
+  }
+  .s1-topbar {
+    position: absolute;
+    top: 50px; left: 80px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    opacity: 0;
+  }
+  .s1-topbar .title {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .s1-topbar .sub {
+    font-size: 14px;
+    color: #A7ABB1;
+    margin-top: 4px;
+  }
+
+  /* ============================================================
+     SCENE 2 — SEMANTIC SEARCH  (5.42 → 11.47s)
+     ============================================================ */
+  .s2-plate {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: top center;
+    opacity: 0;
+  }
+  .s2-plate-unfiltered {
+    opacity: 0.45;
+    filter: blur(2px) saturate(0.7);
+  }
+  .s2-plate-reranked {
+    opacity: 0;
+    filter: saturate(0.9);
+  }
+  .s2-search-bar {
+    position: absolute;
+    top: 120px;
+    left: 320px;
+    width: 1280px;
+    height: 100px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    padding: 0 34px;
+    gap: 20px;
+    z-index: 10;
+    box-shadow: 0 0 0 3px rgba(35, 102, 233, 0.40);
+  }
+  .s2-search-icon {
+    width: 30px; height: 30px;
+    color: #599BFF;
+    flex-shrink: 0;
+  }
+  .s2-query {
+    font-size: 32px;
+    font-weight: 400;
+    color: #EBEFF5;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    position: relative;
+    display: inline-block;
+  }
+  .s2-query-text {
+    display: inline-block;
+    clip-path: inset(0 100% 0 0);
+    will-change: clip-path;
+  }
+  .s2-caret {
+    width: 2px;
+    height: 42px;
+    background: #599BFF;
+    margin-left: 2px;
+  }
+  .s2-shimmer {
+    position: absolute;
+    top: 320px; left: 80px;
+    width: 1760px; height: 3px;
+    background: linear-gradient(90deg, rgba(89,155,255,0) 0%, rgba(89,155,255,0.85) 50%, rgba(89,155,255,0) 100%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9;
+  }
+  .s2-callout {
+    position: absolute;
+    top: 430px;
+    left: 780px;
+    width: 220px;
+    height: 44px;
+    background: #131822;
+    border: 1px solid #599BFF;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #599BFF;
+    font-size: 13px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    opacity: 0;
+    z-index: 11;
+  }
+  .s2-callout-line {
+    position: absolute;
+    top: 475px;
+    left: 890px;
+    width: 1px;
+    height: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ============================================================
+     SCENE 3 — FILTER  (11.47 → 16.82s)
+     ============================================================ */
+  .s3-plate {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: top center;
+  }
+  .s3-plate-unfiltered {
+    background-image: url("captures/yc-search/screenshots/features/02-semantic-search.png");
+    opacity: 0.9;
+  }
+  .s3-plate-filtered {
+    background-image: url("captures/yc-search/screenshots/features/03-filtered.png");
+    opacity: 0;
+  }
+  .s3-counter-wrap {
+    position: absolute;
+    top: 120px;
+    left: 96px;
+    z-index: 10;
+    background: rgba(10, 16, 24, 0.82);
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1px solid #2F3640;
+    backdrop-filter: blur(6px);
+    opacity: 0;
+  }
+  .s3-counter {
+    width: 360px;
+    height: 130px;
+    overflow: hidden;
+    position: relative;
+  }
+  .s3-counter-track {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    flex-direction: column;
+    font-family: "Space Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 120px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 130px;
+    color: #EBEFF5;
+    will-change: transform;
+  }
+  .s3-counter-row {
+    height: 130px;
+    flex-shrink: 0;
+  }
+  .s3-counter-label {
+    margin-top: 8px;
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #A7ABB1;
+  }
+  .s3-popover {
+    position: absolute;
+    top: 528px;
+    left: 910px;
+    width: 280px;
+    padding: 16px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 14px;
+    z-index: 20;
+    opacity: 0;
+    transform: scale(0.92) translateY(-8px);
+    transform-origin: top right;
+  }
+  .s3-popover-title {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #A7ABB1;
+    margin-bottom: 14px;
+  }
+  .s3-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 4px;
+    font-size: 15px;
+    color: #EBEFF5;
+  }
+  .s3-popover-checkbox {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid #575E69;
+    flex-shrink: 0;
+  }
+  .s3-popover-row.active .s3-popover-checkbox {
+    background: #2366E9;
+    border-color: #2366E9;
+  }
+  .s3-popover-chip {
+    margin-left: auto;
+    padding: 2px 10px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+  .chip-healthcare { background: #57193A; color: #F3A0AE; }
+  .chip-b2b        { background: #195735; color: #6BE4A8; }
+  .chip-industrials{ background: #574F19; color: #E3D680; }
+  .chip-consumer   { background: #192E57; color: #8BB4FF; }
+  .chip-fintech    { background: #4B1957; color: #E3A8F2; }
+
+  .s3-chip-rail {
+    position: absolute;
+    top: 236px;
+    left: 240px;
+    display: flex;
+    gap: 10px;
+    z-index: 12;
+    opacity: 0;
+  }
+  .s3-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    background: #57193A;
+    color: #F3A0AE;
+    border: 1px solid rgba(243, 160, 174, 0.2);
+  }
+  .s3-filter-chip .x {
+    opacity: 0.7;
+    font-weight: 500;
+  }
+
+  /* ============================================================
+     SCENE 4 — GRAPH  (16.82 → 25.06s)
+     ============================================================ */
+  .s4-bg {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 65% 50%, rgba(35, 102, 233, 0.08) 0%, rgba(35, 102, 233, 0) 50%),
+      #0A1018;
+  }
+  .s4-left-table {
+    position: absolute;
+    top: 80px;
+    left: -60px;
+    width: 760px;
+    height: 920px;
+    background-image: url("captures/yc-search/screenshots/features/03-filtered.png");
+    background-size: cover;
+    background-position: top left;
+    border-radius: 18px;
+    transform-origin: left center;
+    transform: perspective(1400px) rotateY(0deg);
+    opacity: 0;
+    z-index: 2;
+  }
+  .s4-graph-label {
+    position: absolute;
+    top: 84px;
+    left: 820px;
+    opacity: 0;
+    z-index: 10;
+  }
+  .s4-graph-label .title {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .s4-graph-label .sub {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #A7ABB1;
+    letter-spacing: 0.04em;
+  }
+  .s4-graph {
+    position: absolute;
+    top: 40px;
+    left: 720px;
+    width: 1200px;
+    height: 1000px;
+    opacity: 0;
+    z-index: 3;
+  }
+  .s4-graph canvas { display: block; width: 100%; height: 100%; }
+  .s4-legend {
+    position: absolute;
+    top: 80px;
+    right: 64px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 12px;
+    padding: 14px 16px;
+    opacity: 0;
+    z-index: 15;
+    min-width: 210px;
+  }
+  .s4-legend-title {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #A7ABB1;
+    margin-bottom: 10px;
+  }
+  .s4-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: 13px;
+    color: #EBEFF5;
+    font-family: "Space Grotesk", sans-serif;
+  }
+  .s4-legend-row .dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .s4-legend-row .count {
+    margin-left: auto;
+    color: #A7ABB1;
+    font-family: "Space Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+  .s4-tooltip {
+    position: absolute;
+    width: 240px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 14px;
+    padding: 16px 18px;
+    z-index: 20;
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  .s4-tooltip-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    background: #4F1E9A url("captures/yc-search/assets/image-1.png") center / cover;
+    margin-bottom: 10px;
+  }
+  .s4-tooltip-name {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  .s4-tooltip-desc {
+    font-size: 12px;
+    color: #A7ABB1;
+    line-height: 1.35;
+    margin-bottom: 12px;
+    min-height: 32px;
+  }
+  .s4-tooltip-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .s4-tooltip-chips .chip {
+    padding: 3px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .s4-tooltip-leader {
+    position: absolute;
+    pointer-events: none;
+    z-index: 19;
+  }
+
+  /* ============================================================
+     SCENE 5 — COMPANY PROFILE  (25.06 → 31.36s)
+     ============================================================ */
+  .s5-pan {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1920px;
+    height: 1760px;
+    transform: translateY(0);
+    will-change: transform;
+  }
+  .s5-hero {
+    position: absolute;
+    top: 60px; left: 160px;
+    width: 1600px;
+    height: 340px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 24px;
+    padding: 48px 56px;
+    box-sizing: border-box;
+    display: flex;
+    gap: 36px;
+    align-items: flex-start;
+    opacity: 0;
+  }
+  .s5-hero-avatar {
+    width: 132px; height: 132px;
+    border-radius: 24px;
+    background: #4F1E9A url("captures/yc-search/assets/image-1.png") center / cover;
+    flex-shrink: 0;
+  }
+  .s5-hero-content {
+    flex: 1;
+  }
+  .s5-hero-tag-hiring {
+    display: inline-block;
+    padding: 3px 10px;
+    background: #57193A;
+    color: #F3A0AE;
+    font-size: 12px;
+    border-radius: 10px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    margin-bottom: 14px;
+  }
+  .s5-hero-name {
+    font-size: 88px;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    margin-bottom: 18px;
+  }
+  .s5-hero-oneliner {
+    font-size: 22px;
+    color: #A7ABB1;
+    line-height: 1.3;
+    max-width: 960px;
+    margin-bottom: 24px;
+  }
+  .s5-hero-chips {
+    display: flex;
+    gap: 10px;
+  }
+  .s5-hero-chips .chip {
+    padding: 6px 14px;
+    font-size: 14px;
+    border-radius: 12px;
+    opacity: 0;
+  }
+
+  .s5-body {
+    position: absolute;
+    top: 460px; left: 160px;
+    width: 1040px;
+    opacity: 0;
+  }
+  .s5-body h2 {
+    font-size: 32px;
+    font-weight: 600;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0 0 24px 0;
+  }
+  .s5-body p {
+    font-size: 20px;
+    line-height: 1.55;
+    color: #CCD1D8;
+    margin: 0 0 18px 0;
+    max-width: 960px;
+  }
+  .s5-body-tags {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;
+  }
+  .s5-body-tags .chip {
+    padding: 5px 12px;
+    font-size: 13px;
+    border-radius: 12px;
+  }
+  .s5-rail {
+    position: absolute;
+    top: 460px;
+    right: 160px;
+    width: 440px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 20px;
+    padding: 28px;
+    box-sizing: border-box;
+    opacity: 0;
+  }
+  .s5-rail h3 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 20px 0;
+  }
+  .s5-rail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    font-size: 14px;
+    border-top: 1px solid #212730;
+  }
+  .s5-rail-row:first-of-type { border-top: none; }
+  .s5-rail-row .k {
+    color: #A7ABB1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .s5-rail-row .v {
+    color: #EBEFF5;
+    font-weight: 500;
+    text-align: right;
+  }
+
+  .s5-neighborhood {
+    position: absolute;
+    top: 1000px; left: 160px;
+    width: 1040px;
+    height: 680px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 20px;
+    padding: 32px;
+    box-sizing: border-box;
+    opacity: 0;
+  }
+  .s5-neighborhood h3 {
+    font-size: 26px;
+    font-weight: 600;
+    margin: 0 0 6px 0;
+  }
+  .s5-neighborhood p {
+    font-size: 15px;
+    color: #A7ABB1;
+    margin: 0 0 20px 0;
+    max-width: 780px;
+  }
+  .s5-neigh-canvas {
+    width: 100%;
+    height: 500px;
+    position: relative;
+  }
+  .s5-neigh-canvas canvas { display: block; width: 100%; height: 100%; }
+  .s5-neigh-annotation {
+    position: absolute;
+    top: 270px; left: 720px;
+    font-size: 13px;
+    color: #599BFF;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    opacity: 0;
+  }
+
+  .s5-similar {
+    position: absolute;
+    top: 1000px;
+    right: 160px;
+    width: 440px;
+    opacity: 0;
+  }
+  .s5-similar h3 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 6px 0;
+  }
+  .s5-similar .intro {
+    font-size: 13px;
+    color: #A7ABB1;
+    margin: 0 0 18px 0;
+  }
+  .s5-similar-row {
+    padding: 16px;
+    background: #131822;
+    border: 1px solid #2F3640;
+    border-radius: 14px;
+    margin-bottom: 10px;
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  .s5-similar-row .name {
+    font-size: 17px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .s5-similar-row .name .score {
+    font-family: "Space Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    color: #A7ABB1;
+    font-weight: 400;
+    font-size: 14px;
+  }
+  .s5-similar-row .desc {
+    font-size: 13px;
+    color: #A7ABB1;
+    line-height: 1.4;
+    margin-bottom: 10px;
+  }
+  .s5-similar-row .tags {
+    display: flex;
+    gap: 6px;
+  }
+  .s5-similar-row .tags .chip {
+    padding: 3px 9px;
+    font-size: 11px;
+    border-radius: 10px;
+  }
+  .s5-leader-lines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  /* ============================================================
+     SCENE 6 — CLOSER  (31.36 → 35.80s)
+     ============================================================ */
+  .s6-radial {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 1600px; height: 1600px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(234,91,33,0.12) 0%, rgba(234,91,33,0) 55%);
+    opacity: 0;
+  }
+  .s6-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .s6-logo {
+    width: 168px;
+    height: 168px;
+    background: #EA5B21;
+    border-radius: 28px;
+    margin: 0 auto 40px;
+    position: relative;
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  .s6-logo-mark {
+    position: absolute;
+    inset: 12px;
+    color: #fff;
+  }
+  .s6-logo-outline {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .s6-wordmark {
+    font-size: 72px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    margin-bottom: 16px;
+    opacity: 0;
+  }
+  .s6-tagline {
+    font-size: 26px;
+    color: #A7ABB1;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  .s6-tagline .w { display: inline-block; opacity: 0; margin: 0 0.14em; }
+  .s6-tagline-caret {
+    display: inline-block;
+    width: 2px;
+    height: 28px;
+    background: #599BFF;
+    margin-left: 4px;
+    vertical-align: -4px;
+    opacity: 0;
+  }
+  .s6-marquee {
+    position: absolute;
+    left: 0; width: 1920px; height: 52px;
+    overflow: hidden;
+    opacity: 0;
+  }
+  .s6-marquee-top { top: 220px; }
+  .s6-marquee-bot { bottom: 220px; }
+  .s6-marquee-track {
+    display: flex;
+    gap: 24px;
+    position: absolute;
+    top: 0; left: 0;
+    will-change: transform;
+  }
+  .s6-marquee-avatar {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+  }
+  .s6-fadeout {
+    position: absolute;
+    inset: 0;
+    background: #0A1018;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 99;
+  }
+</style>
+</head>
+<body>
+
+<div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-start="0" data-duration="39.0">
+
+  <!-- ====================================================== SCENE 1 — HOOK ====================================================== -->
+  <div id="scene1" class="scene">
+    <div class="dot-grid" id="s1-dots"></div>
+    <div class="vignette"></div>
+    <div class="s1-plate-table" id="s1-plate" style="background-image: url('captures/yc-search/screenshots/features/01-table.png');"></div>
+
+    <div class="s1-topbar" id="s1-topbar">
+      <span class="yc-logo-square">
+        <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+          <path d="m111.1 133.6-29.41-46.68h18.55l18.96 33.42 19.39-33.21h17.25l-29.87 46.51v55.7" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <div>
+        <div class="title">YC Search</div>
+        <div class="sub">Hybrid keyword + semantic search for YC companies.</div>
+      </div>
+    </div>
+
+    <div class="s1-counter-wrap" id="s1-counter-wrap">
+      <div class="s1-counter">
+        <div class="s1-counter-track" id="s1-counter-track">
+          <div class="s1-counter-row">0</div>
+          <div class="s1-counter-row">1,248</div>
+          <div class="s1-counter-row">2,730</div>
+          <div class="s1-counter-row">3,964</div>
+          <div class="s1-counter-row">4,890</div>
+          <div class="s1-counter-row">5,512</div>
+          <div class="s1-counter-row">5,851</div>
+        </div>
+      </div>
+      <div class="s1-counter-label" id="s1-counter-label">companies indexed</div>
+    </div>
+
+    <div class="s1-search-bar" id="s1-bar">
+      <svg class="s1-search-icon" id="s1-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8" stroke-dasharray="60" stroke-dashoffset="60"/>
+        <path d="m21 21-4.34-4.34" stroke-dasharray="12" stroke-dashoffset="12"/>
+      </svg>
+      <div class="s1-search-placeholder" id="s1-placeholder">
+        <span class="try-label">Try</span><span>B2B SaaS companies in healthcare</span>
+      </div>
+      <div class="s1-focus-ring" id="s1-focus-ring"></div>
+      <div class="s1-caret" id="s1-caret"></div>
+    </div>
+
+    <div class="cursor" id="s1-cursor" style="left: 1700px; top: 940px; opacity: 0;">
+      <svg viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 2 2 L 20 14 L 11 15 L 14 25 L 10 27 L 7 17 L 2 22 Z" fill="#EBEFF5" stroke="#0A1018" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="ripple" id="s1-ripple" style="left: 402px; top: 506px; opacity: 0; width: 20px; height: 20px;"></div>
+  </div>
+
+  <!-- ====================================================== SCENE 2 — SEMANTIC SEARCH ====================================================== -->
+  <div id="scene2" class="scene">
+    <div class="dot-grid"></div>
+    <div class="vignette"></div>
+    <div class="s2-plate s2-plate-unfiltered" id="s2-plate-un" style="background-image: url('captures/yc-search/screenshots/features/01-table.png');"></div>
+    <div class="s2-plate s2-plate-reranked" id="s2-plate-re" style="background-image: url('captures/yc-search/screenshots/features/02-semantic-search.png');"></div>
+
+    <div class="s2-search-bar" id="s2-bar">
+      <svg class="s2-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="m21 21-4.34-4.34"/>
+      </svg>
+      <div class="s2-query"><span class="s2-query-text" id="s2-query-text">AI agents for healthcare workflows</span></div>
+      <div class="s2-caret" id="s2-caret"></div>
+    </div>
+
+    <div class="s2-shimmer" id="s2-shimmer"></div>
+
+    <svg class="s2-callout-line" id="s2-callout-line" width="2" height="80" viewBox="0 0 2 80">
+      <path d="M 1 0 L 1 80" stroke="#599BFF" stroke-width="1" fill="none" stroke-dasharray="80" stroke-dashoffset="80"/>
+    </svg>
+    <div class="s2-callout" id="s2-callout">RANKED BY MEANING</div>
+  </div>
+
+  <!-- ====================================================== SCENE 3 — FILTER ====================================================== -->
+  <div id="scene3" class="scene">
+    <div class="dot-grid"></div>
+    <div class="vignette"></div>
+    <div class="s3-plate s3-plate-unfiltered" id="s3-plate-un"></div>
+    <div class="s3-plate s3-plate-filtered" id="s3-plate-fi"></div>
+
+    <div class="s3-counter-wrap" id="s3-counter-wrap">
+      <div class="s3-counter">
+        <div class="s3-counter-track" id="s3-counter-track">
+          <div class="s3-counter-row">5,851</div>
+          <div class="s3-counter-row">3,420</div>
+          <div class="s3-counter-row">1,800</div>
+          <div class="s3-counter-row">920</div>
+          <div class="s3-counter-row">666</div>
+        </div>
+      </div>
+      <div class="s3-counter-label">matching companies</div>
+    </div>
+
+    <div class="s3-chip-rail" id="s3-chip-rail">
+      <div class="s3-filter-chip">Healthcare <span class="x">×</span></div>
+    </div>
+
+    <div class="s3-popover" id="s3-popover">
+      <div class="s3-popover-title">Filter by industry</div>
+      <div class="s3-popover-row active" id="s3-pop-healthcare">
+        <span class="s3-popover-checkbox"></span>
+        <span>Healthcare</span>
+        <span class="s3-popover-chip chip-healthcare">666</span>
+      </div>
+      <div class="s3-popover-row">
+        <span class="s3-popover-checkbox"></span>
+        <span>B2B</span>
+        <span class="s3-popover-chip chip-b2b">2,381</span>
+      </div>
+      <div class="s3-popover-row">
+        <span class="s3-popover-checkbox"></span>
+        <span>Consumer</span>
+        <span class="s3-popover-chip chip-consumer">812</span>
+      </div>
+      <div class="s3-popover-row">
+        <span class="s3-popover-checkbox"></span>
+        <span>Industrials</span>
+        <span class="s3-popover-chip chip-industrials">217</span>
+      </div>
+      <div class="s3-popover-row">
+        <span class="s3-popover-checkbox"></span>
+        <span>Fintech</span>
+        <span class="s3-popover-chip chip-fintech">496</span>
+      </div>
+    </div>
+
+    <div class="cursor" id="s3-cursor" style="left: 420px; top: 260px; opacity: 0;">
+      <svg viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 2 2 L 20 14 L 11 15 L 14 25 L 10 27 L 7 17 L 2 22 Z" fill="#EBEFF5" stroke="#0A1018" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="ripple" id="s3-ripple" style="left: 960px; top: 594px; opacity: 0; width: 18px; height: 18px;"></div>
+  </div>
+
+  <!-- ====================================================== SCENE 4 — GRAPH ====================================================== -->
+  <div id="scene4" class="scene">
+    <div class="s4-bg"></div>
+    <div class="dot-grid" style="opacity: 0.6;"></div>
+
+    <div class="s4-left-table" id="s4-table"></div>
+
+    <div class="s4-graph-label" id="s4-graph-label">
+      <div class="title">Companies graph</div>
+      <div class="sub">666 matches · color by batch</div>
+    </div>
+
+    <div class="s4-graph" id="s4-graph-wrap">
+      <canvas id="s4-canvas-base" width="1200" height="1000" style="position:absolute; inset:0;"></canvas>
+      <canvas id="s4-canvas-hover" width="1200" height="1000" style="position:absolute; inset:0; opacity:0;"></canvas>
+    </div>
+
+    <div class="s4-legend" id="s4-legend">
+      <div class="s4-legend-title">Batch</div>
+      <div class="s4-legend-row"><span class="dot" style="background:#00BAAA;"></span>Summer 2026 <span class="count">212</span></div>
+      <div class="s4-legend-row"><span class="dot" style="background:#3D7EFC;"></span>Spring 2026 <span class="count">180</span></div>
+      <div class="s4-legend-row"><span class="dot" style="background:#F35863;"></span>Winter 2026 <span class="count">104</span></div>
+      <div class="s4-legend-row"><span class="dot" style="background:#C68BD3;"></span>Fall 2025 <span class="count">97</span></div>
+      <div class="s4-legend-row"><span class="dot" style="background:#AFAF00;"></span>Summer 2025 <span class="count">73</span></div>
+    </div>
+
+    <div class="s4-tooltip" id="s4-tooltip" style="left: 1360px; top: 420px;">
+      <div class="s4-tooltip-avatar"></div>
+      <div class="s4-tooltip-name">Tsenta</div>
+      <div class="s4-tooltip-desc">Matches you to jobs and applies automatically on your behalf.</div>
+      <div class="s4-tooltip-chips">
+        <span class="chip chip-consumer">Consumer</span>
+        <span class="chip chip-consumer">AI</span>
+        <span class="chip" style="background:#144B44; color:#6EEBD8;">Summer 2026</span>
+      </div>
+    </div>
+    <svg class="s4-tooltip-leader" id="s4-leader" width="140" height="140" viewBox="0 0 140 140" style="left: 1330px; top: 650px;">
+      <path d="M 130 10 Q 70 40 10 130" stroke="#599BFF" stroke-width="1.2" fill="none" stroke-dasharray="200" stroke-dashoffset="200"/>
+    </svg>
+
+    <div class="cursor" id="s4-cursor" style="left: 1880px; top: 80px; opacity: 0;">
+      <svg viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 2 2 L 20 14 L 11 15 L 14 25 L 10 27 L 7 17 L 2 22 Z" fill="#EBEFF5" stroke="#0A1018" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ====================================================== SCENE 5 — COMPANY PROFILE ====================================================== -->
+  <div id="scene5" class="scene">
+    <div class="dot-grid"></div>
+    <div class="vignette"></div>
+
+    <div class="s5-pan" id="s5-pan">
+      <!-- Hero card -->
+      <div class="s5-hero" id="s5-hero">
+        <div class="s5-hero-avatar"></div>
+        <div class="s5-hero-content">
+          <span class="s5-hero-tag-hiring" id="s5-hiring">Hiring</span>
+          <div class="s5-hero-name">Tsenta</div>
+          <div class="s5-hero-oneliner">Matches you to jobs and applies automatically on your behalf.</div>
+          <div class="s5-hero-chips" id="s5-hero-chips">
+            <span class="chip" style="background:#144B44; color:#6EEBD8;">Summer 2026</span>
+            <span class="chip chip-b2b">Early</span>
+            <span class="chip chip-consumer">Consumer</span>
+            <span class="chip chip-b2b">Active</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Body left -->
+      <div class="s5-body" id="s5-body">
+        <h2>What they do</h2>
+        <p>Tsenta is a desktop app that matches you with jobs, optimizes your profile, and applies on your behalf. It runs on your device, so you have granular control over every application being submitted in real-time.</p>
+        <div class="s5-body-tags">
+          <span class="chip chip-consumer">Artificial Intelligence</span>
+          <span class="chip chip-consumer">Consumer</span>
+          <span class="chip chip-fintech">Recruiting</span>
+          <span class="chip chip-b2b">HR Tech</span>
+        </div>
+      </div>
+
+      <!-- Right rail -->
+      <div class="s5-rail" id="s5-rail">
+        <h3>Snapshot</h3>
+        <div class="s5-rail-row"><span class="k">Status</span><span class="v">Active</span></div>
+        <div class="s5-rail-row"><span class="k">Team size</span><span class="v">2</span></div>
+        <div class="s5-rail-row"><span class="k">Location</span><span class="v">San Francisco</span></div>
+        <div class="s5-rail-row"><span class="k">Launched</span><span class="v">2026</span></div>
+        <div class="s5-rail-row"><span class="k">Sub-industry</span><span class="v">Job & Career</span></div>
+        <div class="s5-rail-row"><span class="k">Website</span><span class="v">tsenta.com</span></div>
+      </div>
+
+      <!-- Embedding neighborhood card -->
+      <div class="s5-neighborhood" id="s5-neigh">
+        <h3>Embedding neighborhood</h3>
+        <p>The 40 most semantically similar companies, drawn from the same 3D graph used across the app.</p>
+        <div class="s5-neigh-canvas">
+          <canvas id="s5-neigh-canvas" width="1000" height="500"></canvas>
+        </div>
+        <div class="s5-neigh-annotation" id="s5-neigh-annot">40 semantic neighbors</div>
+      </div>
+
+      <!-- Similar companies -->
+      <div class="s5-similar" id="s5-similar">
+        <h3>Similar companies</h3>
+        <div class="intro">Semantic neighbors from embeddings over metadata, web snapshots, and YC profile content.</div>
+        <div class="s5-similar-row" id="s5-sim-1">
+          <div class="name"><span>Tesora</span><span class="score">0.489</span></div>
+          <div class="desc">AI-Native Underwriting and Actuarial Workflows.</div>
+          <div class="tags"><span class="chip" style="background:#144B44;color:#6EEBD8;">Summer 2025</span><span class="chip chip-b2b">B2B</span></div>
+        </div>
+        <div class="s5-similar-row" id="s5-sim-2">
+          <div class="name"><span>Taiga</span><span class="score">0.458</span></div>
+          <div class="desc">Full-stack Medical Billing Services.</div>
+          <div class="tags"><span class="chip" style="background:#1A3F6B;color:#8BB4FF;">Spring 2026</span><span class="chip chip-healthcare">Healthcare</span></div>
+        </div>
+        <div class="s5-similar-row" id="s5-sim-3">
+          <div class="name"><span>Techmate</span><span class="score">0.447</span></div>
+          <div class="desc">A technology concierge for your home. On-demand support.</div>
+          <div class="tags"><span class="chip chip-consumer">Consumer</span><span class="chip chip-b2b">Early</span></div>
+        </div>
+        <div class="s5-similar-row" id="s5-sim-4">
+          <div class="name"><span>Standout</span><span class="score">0.445</span></div>
+          <div class="desc">The Hollywood agent for startup talent.</div>
+          <div class="tags"><span class="chip chip-consumer">Consumer</span><span class="chip chip-b2b">Early</span></div>
+        </div>
+      </div>
+
+      <!-- Leader lines overlay (pathLength=1 normalizes all strokes so dashoffset 0..1 reveals uniformly) -->
+      <svg class="s5-leader-lines" id="s5-leader-lines" width="1920" height="1760" viewBox="0 0 1920 1760">
+        <path id="s5-line-1" d="M 680 1430 Q 1000 1400 1320 1185" pathLength="1" stroke="#3D7EFC" stroke-width="1" fill="none" stroke-dasharray="1" stroke-dashoffset="1" opacity="0.7"/>
+        <path id="s5-line-2" d="M 680 1430 Q 1000 1410 1320 1325" pathLength="1" stroke="#3D7EFC" stroke-width="1" fill="none" stroke-dasharray="1" stroke-dashoffset="1" opacity="0.7"/>
+        <path id="s5-line-3" d="M 680 1430 Q 1000 1450 1320 1465" pathLength="1" stroke="#3D7EFC" stroke-width="1" fill="none" stroke-dasharray="1" stroke-dashoffset="1" opacity="0.7"/>
+        <path id="s5-line-4" d="M 680 1430 Q 1000 1510 1320 1605" pathLength="1" stroke="#3D7EFC" stroke-width="1" fill="none" stroke-dasharray="1" stroke-dashoffset="1" opacity="0.7"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ====================================================== SCENE 6 — CLOSER ====================================================== -->
+  <div id="scene6" class="scene">
+    <div class="dot-grid"></div>
+    <div class="s6-radial" id="s6-radial"></div>
+
+    <div class="s6-marquee s6-marquee-top" id="s6-mq-top">
+      <div class="s6-marquee-track" id="s6-track-top"></div>
+    </div>
+    <div class="s6-marquee s6-marquee-bot" id="s6-mq-bot">
+      <div class="s6-marquee-track" id="s6-track-bot"></div>
+    </div>
+
+    <div class="s6-center">
+      <div class="s6-logo" id="s6-logo">
+        <svg class="s6-logo-mark" viewBox="0 0 256 256">
+          <path d="m111.1 133.6-29.41-46.68h18.55l18.96 33.42 19.39-33.21h17.25l-29.87 46.51v55.7" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <svg class="s6-logo-outline" viewBox="0 0 168 168">
+          <rect x="2" y="2" width="164" height="164" rx="26" fill="none" stroke="#EBEFF5" stroke-width="1" stroke-dasharray="656" stroke-dashoffset="656"/>
+        </svg>
+      </div>
+      <div class="s6-wordmark" id="s6-wordmark">YC Search</div>
+      <div class="s6-tagline">
+        <span class="w">Every</span>
+        <span class="w">company,</span>
+        <span class="w">one</span>
+        <span class="w">query</span>
+        <span class="w">away.</span><span class="s6-tagline-caret" id="s6-caret"></span>
+      </div>
+    </div>
+    <div class="s6-fadeout" id="s6-fadeout"></div>
+  </div>
+</div>
+
+<audio id="narration" data-start="0" data-duration="39.0" data-track-index="10" data-volume="1" src="narration.wav"></audio>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/MotionPathPlugin.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  gsap.registerPlugin(MotionPathPlugin);
+
+  // Seeded PRNG for deterministic layouts
+  function mulberry32(a){
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  var tl = gsap.timeline({ paused: true, defaults: { overwrite: false } });
+
+  // ----------------- SCENE BOUNDARIES (locked to transcript.json, OpenAI TTS v2) -----------------
+  // B1 5,851 @0.11 | B2 Type @6.63 | B3 Filter @13.51 | B4 Open @19.05 | B5 Click @27.25 | B6 YC @34.89 | away. @37.91
+  var S1 = 0.00, S2 = 6.58, S3 = 13.46, S4 = 19.00, S5 = 27.20, S6 = 34.84;
+  var END = 39.00;
+
+  // Transitions fire 0.20s before scene boundary, span 0.40s
+  var T1 = S2 - 0.20; // 6.38
+  var T2 = S3 - 0.20; // 13.26
+  var T3 = S4 - 0.20; // 18.80
+  var T4 = S5 - 0.20; // 27.00
+  var T5 = S6 - 0.20; // 34.64
+
+  // ================================================
+  // SCENE 1 — HOOK
+  // ================================================
+  // Dot grid drift (continuous, scene-1 only — replaced per scene visually but re-used)
+  tl.to("#s1-dots", { x: -44, y: -44, duration: 6, ease: "none", repeat: 0 }, 0);
+
+  // Top bar (YC + title)
+  tl.from("#s1-topbar", { y: -12, opacity: 0, duration: 0.55, ease: "power2.out" }, 0.15);
+
+  // Table plate far: fade + subtle deblur (reference, lingering)
+  tl.to("#s1-plate", { opacity: 0.32, filter: "blur(10px)", scale: 1.0, duration: 1.4, ease: "power2.out" }, 0.0);
+
+  // Counter value 0 → 5,851 — odometer reel (seek-safe: GSAP transforms)
+  // 7 rows × 280px = 1960px total. Land on row 6 (y = -1680). Lands at 0.10+1.90 = 2.00s as "5,851" ends at 1.91s
+  gsap.set("#s1-counter-track", { y: 0 });
+  tl.to("#s1-counter-track", { y: -1680, duration: 1.9, ease: "power2.out" }, 0.10);
+  tl.to("#s1-counter-label", { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.3);
+
+  // Counter exits upward — after "Companies," ends at 3.96s and before "One" at 4.79s
+  tl.to("#s1-counter-wrap", { y: -220, opacity: 0, duration: 0.55, ease: "power2.in" }, 3.80);
+
+  // Table plate fades further for bar reveal
+  tl.to("#s1-plate", { opacity: 0.12, filter: "blur(18px)", duration: 0.6, ease: "power2.inOut" }, 3.90);
+
+  // Search bar drops in — lands around "One" (4.79s)
+  tl.to("#s1-bar", { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.85, ease: "power3.out" }, 4.05);
+
+  // Search icon stroke draws
+  tl.to("#s1-search-icon circle, #s1-search-icon path", { attr: { "stroke-dashoffset": 0 }, duration: 0.5, ease: "power2.out" }, 4.55);
+
+  // Placeholder "Try B2B SaaS..." fades in
+  tl.to("#s1-placeholder", { opacity: 0.8, duration: 0.4, ease: "power1.out" }, 4.85);
+
+  // Caret blink (finite repeats)
+  tl.set("#s1-caret", { opacity: 1 }, 5.05);
+  tl.to("#s1-caret", { opacity: 0, duration: 0.32, yoyo: true, repeat: 3, ease: "steps(1)" }, 5.07);
+
+  // Cursor arrives, motion path from bottom-right corner into the search bar
+  tl.to("#s1-cursor", { opacity: 1, duration: 0.2, ease: "power1.out" }, 5.05);
+  tl.to("#s1-cursor", {
+    motionPath: {
+      path: [
+        { x: 1700, y: 940 },
+        { x: 1200, y: 820 },
+        { x: 820, y: 680 },
+        { x: 420, y: 506 }
+      ],
+      curviness: 1.4
+    },
+    duration: 1.1,
+    ease: "power2.inOut",
+    overwrite: "auto"
+  }, 5.30);
+
+  // Click ripple + focus ring — right as "bar." is said (6.06-6.52s)
+  tl.fromTo("#s1-ripple",
+    { scale: 0.3, opacity: 0.8 },
+    { scale: 4, opacity: 0, duration: 0.55, ease: "power2.out" },
+    6.15);
+  tl.to("#s1-focus-ring", { opacity: 1, duration: 0.22, ease: "power2.out" }, 6.15);
+
+  // ------- TRANSITION 1 → 2 : blur-crossfade with zoom ---------
+  tl.to("#scene1", { filter: "blur(12px)", scale: 1.04, opacity: 0, duration: 0.42, ease: "power2.in", transformOrigin: "center center" }, T1);
+  tl.fromTo("#scene2",
+    { filter: "blur(12px)", scale: 0.96, opacity: 0 },
+    { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.48, ease: "power2.out", transformOrigin: "center center" },
+    T1 + 0.08);
+
+  // ================================================
+  // SCENE 2 — SEMANTIC SEARCH
+  // ================================================
+  // Base plate states
+  tl.set("#s2-plate-un", { opacity: 0.45 }, S2);
+  tl.set("#s2-plate-re", { opacity: 0 }, S2);
+
+  // Search bar entrance — comes from the Scene-1 position, settles slightly larger
+  tl.from("#s2-bar", { scale: 0.98, y: -6, opacity: 0, duration: 0.45, ease: "power2.out" }, S2);
+
+  // Query reveal via clip-path (seek-safe). Anchored to VO: "AI agents ... workflows" spans ~8.37-9.86s absolute.
+  (function(){
+    var typeStart = S2 + 1.70; // 8.28s absolute — just before "AI" (8.37s)
+    var typeEnd   = S2 + 3.40; // 9.98s absolute — just after "workflows" (9.86s)
+    var caretEl = "#s2-caret";
+    gsap.set("#s2-query-text", { clipPath: "inset(0 100% 0 0)" });
+    tl.to("#s2-query-text", {
+      clipPath: "inset(0 0% 0 0)",
+      duration: typeEnd - typeStart,
+      ease: "steps(34)"
+    }, typeStart);
+    tl.set(caretEl, { opacity: 1 }, typeStart);
+    tl.to(caretEl, { opacity: 0, yoyo: true, repeat: 10, duration: 0.18, ease: "steps(1)" }, typeStart);
+    tl.to(caretEl, { opacity: 0, duration: 0.2 }, typeEnd + 0.30);
+  })();
+
+  // Shimmer sweep as results rerank — "ranks" @10.89s absolute = S2 + 4.31
+  tl.set("#s2-shimmer", { y: 0, opacity: 0, scaleY: 1 }, S2 + 4.20);
+  tl.to("#s2-shimmer", { opacity: 0.8, duration: 0.15 }, S2 + 4.20);
+  tl.to("#s2-shimmer", { y: 760, duration: 0.65, ease: "power2.inOut" }, S2 + 4.25);
+  tl.to("#s2-shimmer", { opacity: 0, duration: 0.25 }, S2 + 4.80);
+
+  // Plate crossfade: un → reranked
+  tl.to("#s2-plate-un", { opacity: 0.05, duration: 0.7, ease: "power2.inOut" }, S2 + 4.25);
+  tl.to("#s2-plate-re", { opacity: 0.95, duration: 0.7, ease: "power2.inOut" }, S2 + 4.25);
+
+  // Leader line + callout "ranked by meaning" — "meaning" @11.34s = S2 + 4.76
+  tl.to("#s2-callout-line path", { attr: { "stroke-dashoffset": 0 }, duration: 0.35, ease: "power2.out" }, S2 + 4.90);
+  tl.fromTo("#s2-callout",
+    { opacity: 0, y: -6, scale: 0.96 },
+    { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: "power2.out" },
+    S2 + 5.20);
+
+  // Hold — callout stays visible through the keyword beat
+
+  // ------- TRANSITION 2 → 3 : blur crossfade (medium) ---------
+  tl.to("#scene2", { filter: "blur(10px)", scale: 1.03, opacity: 0, duration: 0.42, ease: "power2.in", transformOrigin: "center center" }, T2);
+  tl.fromTo("#scene3",
+    { filter: "blur(10px)", scale: 0.97, opacity: 0 },
+    { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.48, ease: "power2.out", transformOrigin: "center center" },
+    T2 + 0.10);
+
+  // ================================================
+  // SCENE 3 — FILTER
+  // ================================================
+  // Counter card fades in first (on "Filter" at 13.51s = S3+0.05)
+  tl.from("#s3-counter-wrap", { opacity: 0, y: 8, duration: 0.45, ease: "power2.out" }, S3 + 0.05);
+
+  // Cursor arcs from mid-frame to the INDUSTRIES column header
+  tl.to("#s3-cursor", { opacity: 1, duration: 0.2 }, S3 + 0.30);
+  tl.to("#s3-cursor", {
+    motionPath: {
+      path: [
+        { x: 420, y: 260 },
+        { x: 700, y: 380 },
+        { x: 990, y: 520 }
+      ],
+      curviness: 1.3
+    },
+    duration: 0.65,
+    ease: "power2.inOut",
+    overwrite: "auto"
+  }, S3 + 0.55);
+
+  // Popover blooms open — on "batch," (14.08s = S3+0.62)
+  tl.fromTo("#s3-popover",
+    { opacity: 0, scale: 0.92, y: -8 },
+    { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: "power3.out", overwrite: "auto" },
+    S3 + 1.20);
+
+  // Cursor moves down to Healthcare row — on "industry" (14.75s = S3+1.29)
+  tl.to("#s3-cursor", {
+    x: 1000, y: 586, duration: 0.45, ease: "power2.inOut"
+  }, S3 + 1.60);
+
+  // Click — ripple + checkbox fill — on "stage." (15.70s = S3+2.24)
+  tl.fromTo("#s3-ripple",
+    { scale: 0.3, opacity: 0.8 },
+    { scale: 4, opacity: 0, duration: 0.5, ease: "power2.out" },
+    S3 + 2.40);
+
+  // Filter chip drops into rail
+  tl.fromTo("#s3-chip-rail",
+    { opacity: 0, y: -18 },
+    { opacity: 1, y: 0, duration: 0.36, ease: "power3.out" },
+    S3 + 2.50);
+
+  // Counter collapse 5,851 → 666 — on "table updates on every keystroke" (16.64-18.94s = S3+3.18 to S3+5.48)
+  gsap.set("#s3-counter-track", { y: 0 });
+  tl.to("#s3-counter-track", { y: -520, duration: 1.5, ease: "power2.out" }, S3 + 3.00);
+
+  // Plate crossfade unfiltered → filtered — sync with counter collapse
+  tl.to("#s3-plate-un", { opacity: 0.05, duration: 0.9, ease: "power2.inOut" }, S3 + 3.10);
+  tl.to("#s3-plate-fi", { opacity: 1, duration: 0.9, ease: "power2.inOut" }, S3 + 3.10);
+
+  // Popover retreats
+  tl.to("#s3-popover", { opacity: 0, y: -6, scale: 0.95, duration: 0.28, ease: "power2.inOut" }, S3 + 3.80);
+
+  // Cursor exits off-right
+  tl.to("#s3-cursor", { x: 1760, y: 300, opacity: 0, duration: 0.45, ease: "power2.in" }, S3 + 4.60);
+
+  // ------- TRANSITION 3 → 4 : scale + blur (wider beat change) ---------
+  tl.to("#scene3", { filter: "blur(14px)", scale: 1.05, opacity: 0, duration: 0.45, ease: "power2.in", transformOrigin: "20% 50%" }, T3);
+  tl.fromTo("#scene4",
+    { filter: "blur(14px)", scale: 0.95, opacity: 0 },
+    { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.55, ease: "power2.out", transformOrigin: "80% 50%" },
+    T3 + 0.10);
+
+  // ================================================
+  // SCENE 4 — GRAPH
+  // ================================================
+  // Left table plate tilts back with perspective
+  tl.fromTo("#s4-table",
+    { opacity: 0, rotateY: 0, x: 0 },
+    { opacity: 0.55, rotateY: -20, x: -120, duration: 1.0, ease: "power2.out", transformPerspective: 1400 },
+    S4 + 0.05);
+
+  // Graph label + legend fade in
+  tl.from("#s4-graph-label", { opacity: 0, x: -16, duration: 0.5, ease: "power2.out" }, S4 + 0.35);
+  tl.to("#s4-graph-wrap", { opacity: 1, duration: 0.8, ease: "power2.out" }, S4 + 0.15);
+  tl.from("#s4-legend", { opacity: 0, y: 10, duration: 0.5, ease: "power2.out" }, S4 + 0.80);
+
+  // Graph — render once at page load into two canvases: baseline + hover.
+  // Scene uses opacity crossfade (seek-safe) to reveal hover state on node landing.
+  (function(){
+    var palette = ["#00BAAA", "#3D7EFC", "#F35863", "#C68BD3", "#AFAF00"];
+    var rng = mulberry32(42);
+    var N = 190;
+    var W = 1200, H = 1000;
+
+    var nodes = [];
+    for (var i = 0; i < N; i++){
+      var t = i / N;
+      var phi = Math.acos(1 - 2 * t);
+      var theta = Math.PI * (1 + Math.sqrt(5)) * i;
+      var r = 260 + rng() * 80;
+      nodes.push({
+        x: r * Math.sin(phi) * Math.cos(theta) + (rng() - 0.5) * 40,
+        y: r * Math.sin(phi) * Math.sin(theta) + (rng() - 0.5) * 40,
+        z: r * Math.cos(phi) + (rng() - 0.5) * 40,
+        baseR: 2.5 + rng() * 3.5,
+        color: palette[Math.floor(rng() * 5)]
+      });
+    }
+    var targetIdx = 37;
+    nodes[targetIdx].color = "#C68BD3";
+    nodes[targetIdx].baseR = 6;
+
+    var edges = [];
+    for (var a = 0; a < N; a++){
+      for (var b = a + 1; b < N; b++){
+        var dx = nodes[a].x - nodes[b].x, dy = nodes[a].y - nodes[b].y, dz = nodes[a].z - nodes[b].z;
+        if (Math.sqrt(dx*dx + dy*dy + dz*dz) < 120) edges.push([a, b]);
+      }
+    }
+
+    function drawFrame(ctx, hoverProgress, attractPull){
+      var rot = 0.55; // fixed rotation — no animation
+      var cx = W / 2, cy = H / 2, focal = 700;
+      ctx.clearRect(0, 0, W, H);
+
+      var proj = new Array(N);
+      for (var i = 0; i < N; i++){
+        var n = nodes[i];
+        var xr = n.x * Math.cos(rot) - n.z * Math.sin(rot);
+        var zr = n.x * Math.sin(rot) + n.z * Math.cos(rot);
+        var f = focal / (focal + zr);
+        proj[i] = { x: cx + xr * f, y: cy + n.y * f, s: f, z: zr };
+      }
+      if (attractPull > 0){
+        for (var i = 0; i < N; i++){
+          if (i === targetIdx) continue;
+          var dx = proj[targetIdx].x - proj[i].x;
+          var dy = proj[targetIdx].y - proj[i].y;
+          var dd = Math.sqrt(dx*dx + dy*dy);
+          if (dd < 160){
+            var pull = (1 - dd / 160) * 10 * attractPull;
+            proj[i].x += (dx / dd) * pull;
+            proj[i].y += (dy / dd) * pull;
+          }
+        }
+      }
+      ctx.lineWidth = 1;
+      for (var e = 0; e < edges.length; e++){
+        var aa = proj[edges[e][0]], bb = proj[edges[e][1]];
+        var alpha = 0.05 + Math.max(0, Math.min(0.08, (0.12 - Math.abs(aa.z - bb.z) / 600)));
+        ctx.strokeStyle = "rgba(160, 180, 220, " + alpha + ")";
+        ctx.beginPath();
+        ctx.moveTo(aa.x, aa.y);
+        ctx.lineTo(bb.x, bb.y);
+        ctx.stroke();
+      }
+      var order = proj.map(function(p, i){ return i; });
+      order.sort(function(aa, bb){ return proj[bb].z - proj[aa].z; });
+      for (var k = 0; k < order.length; k++){
+        var idx = order[k];
+        var p = proj[idx], n = nodes[idx];
+        var r = n.baseR * (0.7 + 0.5 * p.s);
+        if (idx === targetIdx) r = r + hoverProgress * 6;
+        ctx.fillStyle = n.color + "55";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = n.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        if (idx === targetIdx && hoverProgress > 0){
+          ctx.strokeStyle = "rgba(198, 139, 211, 0.55)";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r + 18, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(198, 139, 211, 0.22)";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r + 34, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    var baseCtx  = document.getElementById("s4-canvas-base").getContext("2d");
+    var hoverCtx = document.getElementById("s4-canvas-hover").getContext("2d");
+    drawFrame(baseCtx, 0, 0);
+    drawFrame(hoverCtx, 1, 0.7);
+  })();
+
+  // Hover canvas fades in when cursor lands on target — "Hover" @25.69s = S4+6.69
+  tl.fromTo("#s4-canvas-hover",
+    { opacity: 0 },
+    { opacity: 1, duration: 0.5, ease: "power3.out" },
+    S4 + 6.80);
+
+  // Cursor: arc into target node — lands at "Hover" (S4+6.69)
+  tl.to("#s4-cursor", { opacity: 1, duration: 0.25 }, S4 + 5.90);
+  tl.to("#s4-cursor", {
+    motionPath: {
+      path: [
+        { x: 1880, y: 80 },
+        { x: 1700, y: 260 },
+        { x: 1500, y: 430 },
+        { x: 1332, y: 552 }
+      ],
+      curviness: 1.4
+    },
+    duration: 0.85,
+    ease: "power2.inOut",
+    overwrite: "auto"
+  }, S4 + 6.00);
+
+  // Tooltip + leader line on "peek" (26.47s = S4+7.47)
+  tl.fromTo("#s4-tooltip",
+    { opacity: 0, y: -8, scale: 0.94 },
+    { opacity: 1, y: 0, scale: 1, duration: 0.38, ease: "power3.out" },
+    S4 + 7.00);
+  tl.to("#s4-leader path", { attr: { "stroke-dashoffset": 0 }, duration: 0.40, ease: "power2.out" }, S4 + 7.05);
+
+  // ------- TRANSITION 4 → 5 : zoom-through on tooltip/target ---------
+  tl.to("#scene4", { filter: "blur(16px)", scale: 1.18, opacity: 0, duration: 0.45, ease: "power2.in", transformOrigin: "72% 52%" }, T4);
+  tl.fromTo("#scene5",
+    { filter: "blur(16px)", scale: 0.88, opacity: 0 },
+    { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.52, ease: "power2.out", transformOrigin: "center center" },
+    T4 + 0.08);
+
+  // ================================================
+  // SCENE 5 — COMPANY PROFILE
+  // ================================================
+  // Hero fades in
+  tl.fromTo("#s5-hero",
+    { opacity: 0, y: 24 },
+    { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
+    S5 + 0.08);
+
+  // Hero chips stagger
+  tl.fromTo("#s5-hero-chips .chip",
+    { opacity: 0 },
+    { opacity: 1, stagger: 0.08, duration: 0.32, ease: "power2.out" },
+    S5 + 0.55);
+
+  // Body + rail fade in
+  tl.fromTo("#s5-body",
+    { opacity: 0, y: 16 },
+    { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" },
+    S5 + 0.85);
+  tl.fromTo("#s5-rail",
+    { opacity: 0, y: 16 },
+    { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" },
+    S5 + 0.95);
+
+  // Vertical pan down to neighborhood — during "snapshot, tags." (S5+1.73-2.93)
+  tl.to("#s5-pan", { y: -640, duration: 1.7, ease: "power2.inOut" }, S5 + 1.80);
+
+  // Neighborhood card fades in — on "40" (S5+3.59)
+  tl.fromTo("#s5-neigh",
+    { opacity: 0 },
+    { opacity: 1, duration: 0.4, ease: "power2.out" },
+    S5 + 3.50);
+
+  // Neighborhood canvas (40 nodes) — rendered once at page load
+  (function(){
+    var ctx = document.getElementById("s5-neigh-canvas").getContext("2d");
+    var W = 1000, H = 500;
+    var palette = ["#00BAAA", "#3D7EFC", "#F35863", "#C68BD3", "#AFAF00"];
+    var rng = mulberry32(123);
+    var nodes = [];
+    for (var i = 0; i < 40; i++){
+      var phi = rng() * Math.PI * 2;
+      var r = 80 + rng() * 110;
+      nodes.push({
+        x: Math.cos(phi) * r + (rng() - 0.5) * 30,
+        y: Math.sin(phi) * r + (rng() - 0.5) * 30,
+        color: palette[Math.floor(rng() * 5)],
+        baseR: 4 + rng() * 3
+      });
+    }
+    nodes.push({ x: 0, y: 0, color: "#EBEFF5", baseR: 8, isFocal: true });
+    ctx.clearRect(0, 0, W, H);
+    var cx = W/2, cy = H/2;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(61, 126, 252, 0.22)";
+    for (var i = 0; i < nodes.length - 1; i++){
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + nodes[i].x, cy + nodes[i].y);
+      ctx.stroke();
+    }
+    for (var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      var x = cx + n.x, y = cy + n.y;
+      ctx.fillStyle = n.color + "55";
+      ctx.beginPath(); ctx.arc(x, y, n.baseR * 2.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = n.color;
+      ctx.beginPath(); ctx.arc(x, y, n.baseR, 0, Math.PI * 2); ctx.fill();
+      if (n.isFocal){
+        ctx.strokeStyle = "rgba(235, 239, 245, 0.5)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, n.baseR + 6, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+  })();
+
+  // Similar companies list — staggered during "40 nearest semantic neighbors" (S5+3.59-4.99)
+  tl.fromTo("#s5-similar",
+    { opacity: 0 },
+    { opacity: 1, duration: 0.3, ease: "power2.out" },
+    S5 + 3.70);
+  tl.fromTo("#s5-sim-1", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.32, ease: "power2.out" }, S5 + 3.90);
+  tl.fromTo("#s5-sim-2", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.32, ease: "power2.out" }, S5 + 4.05);
+  tl.fromTo("#s5-sim-3", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.32, ease: "power2.out" }, S5 + 4.20);
+  tl.fromTo("#s5-sim-4", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.32, ease: "power2.out" }, S5 + 4.35);
+
+  // Leader lines draw from center to each row — during "semantic neighbors" (S5+4.78-4.99)
+  tl.fromTo("#s5-line-1", { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.42, ease: "power2.out" }, S5 + 4.70);
+  tl.fromTo("#s5-line-2", { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.42, ease: "power2.out" }, S5 + 4.85);
+  tl.fromTo("#s5-line-3", { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.42, ease: "power2.out" }, S5 + 5.00);
+  tl.fromTo("#s5-line-4", { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.42, ease: "power2.out" }, S5 + 5.15);
+
+  // "40 semantic neighbors" annotation — during "embeddings" (S5+6.92)
+  tl.fromTo("#s5-neigh-annot",
+    { opacity: 0, y: 4 },
+    { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" },
+    S5 + 6.80);
+
+  // ------- TRANSITION 5 → 6 : slow blur crossfade (calm outro) ---------
+  tl.to("#scene5", { filter: "blur(20px)", scale: 1.02, opacity: 0, duration: 0.55, ease: "power1.in" }, T5);
+  tl.fromTo("#scene6",
+    { filter: "blur(18px)", scale: 0.98, opacity: 0 },
+    { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.6, ease: "power1.out" },
+    T5 + 0.10);
+
+  // ================================================
+  // SCENE 6 — CLOSER
+  // ================================================
+  // Warm radial glow under logo
+  tl.to("#s6-radial", { opacity: 1, duration: 0.7, ease: "power2.out" }, S6 + 0.05);
+
+  // Logo scales in
+  tl.to("#s6-logo", { opacity: 1, scale: 1, duration: 0.55, ease: "power3.out" }, S6 + 0.10);
+
+  // Logo outline stroke-draws around the square
+  tl.to(".s6-logo-outline rect", { attr: { "stroke-dashoffset": 0 }, duration: 0.7, ease: "power2.out" }, S6 + 0.65);
+
+  // Build marquee tracks with avatars (finite repeats, deterministic)
+  (function(){
+    var topTrack = document.getElementById("s6-track-top");
+    var botTrack = document.getElementById("s6-track-bot");
+    var assets = [
+      "captures/yc-search/assets/image-4.png",
+      "captures/yc-search/assets/image-5.png",
+      "captures/yc-search/assets/image-6.png",
+      "captures/yc-search/assets/image-7.png",
+      "captures/yc-search/assets/image-8.png",
+      "captures/yc-search/assets/image-9.png",
+      "captures/yc-search/assets/image-10.png",
+      "captures/yc-search/assets/image-11.png"
+    ];
+    function pad(track){
+      for (var i = 0; i < 24; i++){
+        var d = document.createElement("div");
+        d.className = "s6-marquee-avatar";
+        d.style.backgroundImage = "url('" + assets[i % assets.length] + "')";
+        track.appendChild(d);
+      }
+    }
+    pad(topTrack);
+    pad(botTrack);
+  })();
+
+  // Marquee scrolls — finite motion across scene duration
+  tl.to(".s6-marquee", { opacity: 0.65, duration: 0.4, ease: "power2.out" }, S6 + 0.70);
+  tl.to("#s6-track-top", { x: -680, duration: 4.2, ease: "none" }, S6 + 0.70);
+  tl.fromTo("#s6-track-bot",
+    { x: -680 },
+    { x: 0, duration: 4.2, ease: "none" },
+    S6 + 0.70);
+
+  // Wordmark
+  tl.fromTo("#s6-wordmark",
+    { opacity: 0, y: 12 },
+    { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" },
+    S6 + 1.10);
+
+  // Tagline per-word — anchored to OpenAI TTS v2 onsets
+  // VO word onsets (absolute): "every" 36.16 · "company," 36.56 · "one" 37.28 · "query" 37.51 · "away." 37.91
+  var words = document.querySelectorAll("#scene6 .s6-tagline .w");
+  var onsets = [36.16, 36.56, 37.28, 37.51, 37.91];
+  words.forEach(function(w, i){
+    tl.fromTo(w,
+      { opacity: 0, y: 14 },
+      { opacity: 1, y: 0, duration: 0.36, ease: "power2.out" },
+      onsets[i] - 0.08);
+  });
+
+  // Caret blink after "away." (finite)
+  tl.set("#s6-caret", { opacity: 1 }, 38.15);
+  tl.to("#s6-caret", { opacity: 0, yoyo: true, repeat: 2, duration: 0.22, ease: "steps(1)" }, 38.17);
+
+  // Final fade-to-black — exits allowed on final scene
+  tl.to("#s6-fadeout", { opacity: 1, duration: 0.6, ease: "power2.in" }, END - 0.70);
+
+  // ---- Register timeline ----
+  window.__timelines = window.__timelines || {};
+  window.__timelines["main"] = tl;
+})();
+</script>
+
+</body>
+</html>
