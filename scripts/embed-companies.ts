@@ -25,6 +25,68 @@ type EmbedCandidate = {
   yc_profile_content_markdown: string | null;
 };
 
+type FounderContextRow = {
+  company_id: number;
+  full_name: string;
+  title: string | null;
+  bio: string | null;
+  background: unknown;
+  github_username: string | null;
+  github_bio: string | null;
+  top_languages: unknown;
+  mention_titles: string[] | null;
+};
+
+function formatFounderContext(rows: FounderContextRow[]): string {
+  if (rows.length === 0) return "";
+  const blocks = rows.map((row) => {
+    const lines: string[] = [];
+    lines.push(`Founder: ${row.full_name}${row.title ? ` — ${row.title}` : ""}`);
+    if (row.bio) lines.push(`Bio: ${row.bio.slice(0, 800)}`);
+    if (row.background && typeof row.background === "object") {
+      const bg = row.background as Record<string, unknown>;
+      if (typeof bg.summary === "string" && bg.summary) {
+        lines.push(`Background: ${bg.summary.slice(0, 600)}`);
+      }
+      if (Array.isArray(bg.previous_companies)) {
+        const prev = bg.previous_companies
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") return null;
+            const e = entry as Record<string, unknown>;
+            const name = typeof e.name === "string" ? e.name : null;
+            const role = typeof e.role === "string" ? e.role : null;
+            return name ? (role ? `${name} (${role})` : name) : null;
+          })
+          .filter((value): value is string => Boolean(value));
+        if (prev.length) lines.push(`Previous: ${prev.slice(0, 8).join(", ")}`);
+      }
+      if (Array.isArray(bg.education)) {
+        const edu = bg.education
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") return null;
+            const e = entry as Record<string, unknown>;
+            return typeof e.school === "string" ? e.school : null;
+          })
+          .filter((value): value is string => Boolean(value));
+        if (edu.length) lines.push(`Education: ${edu.slice(0, 4).join(", ")}`);
+      }
+    }
+    if (row.github_username) lines.push(`GitHub: @${row.github_username}`);
+    if (row.github_bio) lines.push(`GitHub bio: ${row.github_bio.slice(0, 400)}`);
+    const languages = Array.isArray(row.top_languages)
+      ? (row.top_languages as Array<{ language?: string }>)
+          .map((entry) => entry?.language)
+          .filter((value): value is string => Boolean(value))
+      : [];
+    if (languages.length) lines.push(`Top languages: ${languages.join(", ")}`);
+    if (row.mention_titles?.length) {
+      lines.push(`Mentions: ${row.mention_titles.filter(Boolean).slice(0, 6).join(" | ")}`);
+    }
+    return lines.join("\n");
+  });
+  return blocks.join("\n\n");
+}
+
 function parseLimitArg(defaultLimit = 500): number {
   const argument = process.argv.find((value) => value.startsWith("--limit="));
   if (!argument) {
@@ -43,18 +105,18 @@ function parseJsonArray(value: string): string[] {
   }
 }
 
-function buildEmbeddingText(candidate: EmbedCandidate): string {
+function buildEmbeddingText(candidate: EmbedCandidate, founderContext: string): string {
   const tags = parseJsonArray(candidate.tags).join(", ");
   const industries = parseJsonArray(candidate.industries).join(", ");
   const regions = parseJsonArray(candidate.regions).join(", ");
   const websiteContent = (candidate.website_content_markdown ?? "").slice(0, 8_000);
   const ycProfileContent = (candidate.yc_profile_content_markdown ?? "").slice(0, 8_000);
 
-  return [
+  const joined = [
     `Company: ${candidate.name}`,
     `One liner: ${candidate.one_liner ?? ""}`,
-    `Description: ${candidate.long_description ?? ""}`,
-    `Search text: ${candidate.search_text}`,
+    `Description: ${(candidate.long_description ?? "").slice(0, 4_000)}`,
+    `Search text: ${candidate.search_text.slice(0, 2_000)}`,
     `Tags: ${tags}`,
     `Industries: ${industries}`,
     `Regions: ${regions}`,
@@ -64,7 +126,11 @@ function buildEmbeddingText(candidate: EmbedCandidate): string {
     `Location: ${candidate.all_locations ?? ""}`,
     `Website content: ${websiteContent}`,
     `YC profile content: ${ycProfileContent}`,
+    `Founders:\n${founderContext.slice(0, 6_000)}`,
   ].join("\n");
+
+  // Hard cap well under text-embedding-3-small's 8192-token window (~4 chars/token).
+  return joined.length > 28_000 ? joined.slice(0, 28_000) : joined;
 }
 
 export type EmbedSummary = {
@@ -117,6 +183,40 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
     };
   }
 
+  const companyIds = candidates.map((candidate) => candidate.id);
+  const founderRows = companyIds.length === 0 ? [] : await query<FounderContextRow>(`
+      SELECT
+        f.company_id,
+        f.full_name,
+        f.title,
+        f.bio,
+        f.background,
+        fg.github_username,
+        fg.bio AS github_bio,
+        fg.top_languages,
+        ARRAY(
+          SELECT fm.title
+          FROM founder_mentions fm
+          WHERE fm.founder_id = f.id AND fm.title IS NOT NULL
+          ORDER BY fm.discovered_at DESC
+          LIMIT 6
+        ) AS mention_titles
+      FROM founders f
+      LEFT JOIN founder_github fg ON fg.founder_id = f.id
+      WHERE f.company_id = ANY(@company_ids::int[])
+      ORDER BY f.company_id ASC, f.id ASC
+    `, { company_ids: `{${companyIds.join(",")}}` });
+
+  const foundersByCompany = new Map<number, FounderContextRow[]>();
+  for (const row of founderRows) {
+    const existing = foundersByCompany.get(row.company_id);
+    if (existing) {
+      existing.push(row);
+    } else {
+      foundersByCompany.set(row.company_id, [row]);
+    }
+  }
+
   const limit = pLimit(10);
   let embeddedCount = 0;
   let skippedCount = 0;
@@ -124,7 +224,8 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
   await Promise.all(
     candidates.map((candidate: EmbedCandidate) =>
       limit(async () => {
-        const embeddingText = buildEmbeddingText(candidate);
+        const founderContext = formatFounderContext(foundersByCompany.get(candidate.id) ?? []);
+        const embeddingText = buildEmbeddingText(candidate, founderContext);
         const sourceHash = sha256(embeddingText);
         const existing = await queryOne<{ source_hash: string }>(
           "SELECT source_hash FROM company_embeddings WHERE company_id = @id",
@@ -196,6 +297,15 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
       value = EXCLUDED.value,
       updated_at = NOW()
   `, { value: new Date().toISOString() });
+
+  if (embeddedCount > 0) {
+    try {
+      const { revalidateTag } = await import("next/cache");
+      revalidateTag("similar-companies", { expire: 0 });
+    } catch {
+      // Running outside the Next runtime (e.g. cron worker). Tag invalidation is best-effort.
+    }
+  }
 
   return {
     requested: candidates.length,

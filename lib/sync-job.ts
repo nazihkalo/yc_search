@@ -1,6 +1,10 @@
 import { advisoryUnlock, execute, initializeDatabase, query, queryOne, tryAdvisoryLock, withConnection } from "./db";
 import { getSyncEmbedLimit, getSyncRunTimeoutMs, getSyncScrapeLimit } from "./env";
+import { crawlFounderSites, type FounderSiteCrawlSummary } from "../scripts/crawl-founder-sites";
 import { embedCompanies, type EmbedSummary } from "../scripts/embed-companies";
+import { enrichFoundersExa, type ExaEnrichSummary } from "../scripts/enrich-founders-exa";
+import { enrichFoundersGithub, type GithubEnrichSummary } from "../scripts/enrich-founders-github";
+import { extractFounders, type ExtractFoundersSummary } from "../scripts/extract-founders";
 import { scrapeCompanies, type ScrapeSummary } from "../scripts/scrape-companies";
 import { scrapeYcCompanyPages, type YcProfileScrapeSummary } from "../scripts/scrape-yc-company-pages";
 import { syncYcCompanies, type SyncYcSummary } from "../scripts/sync-yc";
@@ -35,6 +39,14 @@ type SyncRunRow = {
   embed_requested: number | null;
   embed_success: number | null;
   embed_skipped: number | null;
+  founders_extracted: number | null;
+  founders_upserted: number | null;
+  github_enriched: number | null;
+  github_failed: number | null;
+  founder_sites_crawled: number | null;
+  founder_sites_failed: number | null;
+  exa_founders_queried: number | null;
+  exa_mentions_added: number | null;
   error: string | null;
 };
 
@@ -80,6 +92,10 @@ export type SyncRunSummary =
       websiteScrape: ScrapeSummary;
       ycProfileScrape: YcProfileScrapeSummary;
       embed: EmbedSummary;
+      founders: ExtractFoundersSummary;
+      github: GithubEnrichSummary;
+      founderSites: FounderSiteCrawlSummary;
+      exa: ExaEnrichSummary;
     }
   | {
       ok: false;
@@ -139,12 +155,16 @@ export async function runIncrementalSync(options?: {
       }
 
       try {
-        const { yc, websiteScrape, ycProfileScrape, scrape, embed } = await withTimeout(
+        const { yc, websiteScrape, ycProfileScrape, scrape, embed, founders, github, founderSites, exa } = await withTimeout(
           (async () => {
             const ycResult = await syncYcCompanies();
             const websiteScrapeResult = await scrapeCompanies({ limit: scrapeLimit });
             const ycProfileScrapeResult = await scrapeYcCompanyPages({ limit: scrapeLimit });
             const scrapeResult = combineScrapeSummaries(websiteScrapeResult, ycProfileScrapeResult);
+            const foundersResult = await extractFounders();
+            const githubResult = await enrichFoundersGithub();
+            const founderSitesResult = await crawlFounderSites();
+            const exaResult = await enrichFoundersExa();
             const embedResult = await embedCompanies({ limit: embedLimit });
             return {
               yc: ycResult,
@@ -152,6 +172,10 @@ export async function runIncrementalSync(options?: {
               ycProfileScrape: ycProfileScrapeResult,
               scrape: scrapeResult,
               embed: embedResult,
+              founders: foundersResult,
+              github: githubResult,
+              founderSites: founderSitesResult,
+              exa: exaResult,
             };
           })(),
           runTimeoutMs,
@@ -186,6 +210,15 @@ export async function runIncrementalSync(options?: {
               embed_requested = @embed_requested,
               embed_success = @embed_success,
               embed_skipped = @embed_skipped,
+              founders_extracted = @founders_extracted,
+              founders_upserted = @founders_upserted,
+              github_enriched = @github_enriched,
+              github_failed = @github_failed,
+              founder_sites_crawled = @founder_sites_crawled,
+              founder_sites_failed = @founder_sites_failed,
+              exa_founders_queried = @exa_founders_queried,
+              exa_mentions_added = @exa_mentions_added,
+              exa_backgrounds_fetched = @exa_backgrounds_fetched,
               error = NULL
             WHERE id = @id
             RETURNING finished_at
@@ -214,6 +247,15 @@ export async function runIncrementalSync(options?: {
             embed_requested: embed.requested,
             embed_success: embed.embeddedCount,
             embed_skipped: embed.skippedCount,
+            founders_extracted: founders.foundersExtracted,
+            founders_upserted: founders.foundersUpserted,
+            github_enriched: github.successCount,
+            github_failed: github.failureCount,
+            founder_sites_crawled: founderSites.successCount,
+            founder_sites_failed: founderSites.failureCount,
+            exa_founders_queried: exa.requested,
+            exa_mentions_added: exa.mentionsAdded,
+            exa_backgrounds_fetched: exa.backgroundsFetched,
           },
         );
 
@@ -231,6 +273,10 @@ export async function runIncrementalSync(options?: {
           websiteScrape,
           ycProfileScrape,
           embed,
+          founders,
+          github,
+          founderSites,
+          exa,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -253,7 +299,7 @@ export async function runIncrementalSync(options?: {
 export async function getLatestSyncStatus() {
   await initializeDatabase();
 
-  const [latestRun, syncStateRows, backlog] = await Promise.all([
+  const [latestRun, syncStateRows, backlog, founderBacklog] = await Promise.all([
     queryOne<SyncRunRow>(
       `
         SELECT
@@ -284,6 +330,14 @@ export async function getLatestSyncStatus() {
           embed_requested,
           embed_success,
           embed_skipped,
+          founders_extracted,
+          founders_upserted,
+          github_enriched,
+          github_failed,
+          founder_sites_crawled,
+          founder_sites_failed,
+          exa_founders_queried,
+          exa_mentions_added,
           error
         FROM sync_runs
         ORDER BY started_at DESC
@@ -311,6 +365,21 @@ export async function getLatestSyncStatus() {
         FROM companies
       `,
     ),
+    queryOne<{
+      pending_github_enrich: string | number;
+      pending_site_crawl: string | number;
+      pending_exa_enrich: string | number;
+      total_founders: string | number;
+    }>(
+      `
+        SELECT
+          COUNT(*) FILTER (WHERE needs_github_enrich = 1) AS pending_github_enrich,
+          COUNT(*) FILTER (WHERE needs_site_crawl = 1) AS pending_site_crawl,
+          COUNT(*) FILTER (WHERE needs_exa_enrich = 1) AS pending_exa_enrich,
+          COUNT(*) AS total_founders
+        FROM founders
+      `,
+    ),
   ]);
 
   return {
@@ -320,6 +389,10 @@ export async function getLatestSyncStatus() {
       pendingWebsiteScrape: Number(backlog?.pending_website_scrape ?? 0),
       pendingYcProfileScrape: Number(backlog?.pending_yc_profile_scrape ?? 0),
       pendingEmbed: Number(backlog?.pending_embed ?? 0),
+      pendingFounderGithub: Number(founderBacklog?.pending_github_enrich ?? 0),
+      pendingFounderSiteCrawl: Number(founderBacklog?.pending_site_crawl ?? 0),
+      pendingFounderExa: Number(founderBacklog?.pending_exa_enrich ?? 0),
+      totalFounders: Number(founderBacklog?.total_founders ?? 0),
     },
     syncState: Object.fromEntries(
       syncStateRows.map((row) => [

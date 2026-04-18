@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, JetBrains_Mono } from "next/font/google";
+import { Manrope, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 
 import { ThemeProvider } from "../components/providers/theme-provider";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -13,6 +13,13 @@ const sans = Manrope({
 const mono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-ui-mono",
+});
+
+const display = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-ui-display",
 });
 
 export const metadata: Metadata = {
@@ -32,7 +39,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className="dark">
-      <body className={`${sans.variable} ${mono.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
+      <body className={`${sans.variable} ${mono.variable} ${display.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
         </ThemeProvider>

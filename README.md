@@ -156,7 +156,7 @@ npm run db:import:sqlite
 - `GET /api/semantic-search` -> semantic search over precomputed embeddings
 - `POST /api/chat` -> chat QA over semantic company retrieval + Crawl4AI snapshot context
 - `GET /api/analytics` -> filtered batch chart data, optional stacked category series
-- `GET /api/companies/:id/embedding-map` -> PCA-based 2D embedding map for selected/similar/other company clusters
+- `GET /api/graph` -> 3D force-graph data (filter-scoped for dashboard, or `?focusId=<id>` for a company-centred neighborhood)
 - `POST /api/sync` -> runs one bounded incremental sync (optional token auth via `Authorization: Bearer <SYNC_TOKEN>`)
 - `GET /api/sync/status` -> latest sync run, backlog counts, and sync timestamps
 
@@ -169,10 +169,7 @@ npm run db:import:sqlite
   - `none` (single bar per batch)
   - `tags` (stacked bars by top tags + `Other`)
   - `industries` (stacked bars by top industries + `Other`)
-- Each company detail page includes a 2D PCA embedding map:
-  - selected company (color 1)
-  - similar companies (color 2)
-  - all other companies (color 3)
+- Each company detail page includes an embedded 3D force-graph of the 40 most semantically similar companies, sharing the same renderer used by the dashboard's companion graph pane. The focus company is highlighted with a glowing halo.
 - Each company detail page shows a Crawl4AI website snapshot section with:
   - extracted description
   - extracted URLs

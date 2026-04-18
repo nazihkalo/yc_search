@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import {
+  BarChart3,
   Brain,
   LayoutGrid,
+  Network,
+  Rows3,
   Search,
   TableProperties,
+  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
 import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
+import { CompaniesForceGraphTab } from "./graph/companies-force-graph-lazy";
 import type {
   AnalyticsResponse,
   ChatResponse,
@@ -162,6 +167,11 @@ export function SearchDashboard() {
   const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
     (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
+  const [graphOpen, setGraphOpen] = useState(searchParams.get("graph") === "1");
+  const [graphRatio, setGraphRatio] = useState(() => {
+    const raw = Number(searchParams.get("graphW"));
+    return Number.isFinite(raw) && raw >= 0.2 && raw <= 0.85 ? raw : 0.5;
+  });
   const [searchFocused, setSearchFocused] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
@@ -247,11 +257,19 @@ export function SearchDashboard() {
     if (topCompany) {
       params.set("topCompany", "1");
     }
+    if (graphOpen) {
+      params.set("graph", "1");
+      if (graphRatio !== 0.5) {
+        params.set("graphW", graphRatio.toFixed(2));
+      }
+    }
     return params.toString();
   }, [
     activeTab,
     analyticsColorBy,
     batches,
+    graphOpen,
+    graphRatio,
     industries,
     isHiring,
     nonprofit,
@@ -676,6 +694,14 @@ export function SearchDashboard() {
 
         </section>
 
+        <SplitLayout
+          graphOpen={graphOpen}
+          graphRatio={graphRatio}
+          onGraphRatioChange={setGraphRatio}
+          onCloseGraph={() => setGraphOpen(false)}
+          baseQueryString={baseQueryString}
+          returnToPath={returnToPath}
+        >
         {activeTab === "results" ? (
           <section className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -712,6 +738,8 @@ export function SearchDashboard() {
                   }}
                   view={view}
                   onViewChange={setView}
+                  graphOpen={graphOpen}
+                  onToggleGraph={() => setGraphOpen((open) => !open)}
                 />
                 <ResultsCardGrid
                   results={results.results}
@@ -800,6 +828,8 @@ export function SearchDashboard() {
                     }}
                     view={view}
                     onViewChange={setView}
+                    graphOpen={graphOpen}
+                    onToggleGraph={() => setGraphOpen((open) => !open)}
                   />
                 }
               />
@@ -891,6 +921,8 @@ export function SearchDashboard() {
                     }}
                     view={view}
                     onViewChange={setView}
+                    graphOpen={graphOpen}
+                    onToggleGraph={() => setGraphOpen((open) => !open)}
                   />
                   <ResultsCardGrid
                     results={results.results}
@@ -979,6 +1011,8 @@ export function SearchDashboard() {
                       }}
                       view={view}
                       onViewChange={setView}
+                      graphOpen={graphOpen}
+                      onToggleGraph={() => setGraphOpen((open) => !open)}
                     />
                   }
                 />
@@ -1077,6 +1111,7 @@ export function SearchDashboard() {
             </Card>
           </section>
         )}
+        </SplitLayout>
       </div>
     </div>
   );
@@ -1142,6 +1177,188 @@ function ControlGroup({
   );
 }
 
+const GRAPH_RATIO_PRESETS: readonly number[] = [0.3, 0.5, 0.7] as const;
+
+function useMediaQuery(query: string) {
+  const subscribe = useCallback(
+    (callback: () => void) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener("change", callback);
+      return () => mql.removeEventListener("change", callback);
+    },
+    [query],
+  );
+  const getSnapshot = useCallback(() => window.matchMedia(query).matches, [query]);
+  const getServerSnapshot = useCallback(() => false, []);
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+function SplitLayout({
+  graphOpen,
+  graphRatio,
+  onGraphRatioChange,
+  onCloseGraph,
+  baseQueryString,
+  returnToPath,
+  children,
+}: {
+  graphOpen: boolean;
+  graphRatio: number;
+  onGraphRatioChange: (ratio: number) => void;
+  onCloseGraph: () => void;
+  baseQueryString: string;
+  returnToPath: string;
+  children: React.ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+
+  const clampRatio = (value: number) => Math.min(0.85, Math.max(0.2, value));
+
+  const startDrag = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      setIsDragging(true);
+
+      const onMove = (moveEvent: PointerEvent) => {
+        const relative = (moveEvent.clientX - rect.left) / rect.width;
+        const nextRatio = clampRatio(1 - relative);
+        onGraphRatioChange(Number(nextRatio.toFixed(3)));
+      };
+      const onUp = () => {
+        setIsDragging(false);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    },
+    [onGraphRatioChange],
+  );
+
+  const cyclePreset = useCallback(() => {
+    const current = GRAPH_RATIO_PRESETS.findIndex((preset) => Math.abs(preset - graphRatio) < 0.02);
+    const nextIndex = (current + 1) % GRAPH_RATIO_PRESETS.length;
+    onGraphRatioChange(GRAPH_RATIO_PRESETS[nextIndex]);
+  }, [graphRatio, onGraphRatioChange]);
+
+  if (!graphOpen) {
+    return <>{children}</>;
+  }
+
+  if (!isDesktop) {
+    return (
+      <>
+        {children}
+        <div className="fixed inset-0 z-50 flex flex-col bg-background">
+          <div className="flex items-center justify-between border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <Network className="size-4 text-primary" />
+              <p className="text-sm font-semibold">Companies graph</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              onClick={onCloseGraph}
+            >
+              <X className="size-3.5" />
+              Close
+            </Button>
+          </div>
+          <div className="relative flex-1">
+            <CompaniesForceGraphTab
+              baseQueryString={baseQueryString}
+              returnToPath={returnToPath}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const leftPercent = Math.round((1 - graphRatio) * 1000) / 10;
+  const rightPercent = Math.round(graphRatio * 1000) / 10;
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn(
+        "grid gap-0",
+        isDragging && "select-none",
+      )}
+      style={{
+        gridTemplateColumns: `${leftPercent}% 6px ${rightPercent}%`,
+        minHeight: "720px",
+      }}
+    >
+      <div className="min-w-0 pr-2">{children}</div>
+
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuenow={Math.round(rightPercent)}
+        onPointerDown={startDrag}
+        onDoubleClick={() => onGraphRatioChange(0.5)}
+        className={cn(
+          "group relative flex cursor-col-resize items-center justify-center",
+          "before:absolute before:inset-y-0 before:left-1/2 before:-ml-[1px] before:w-[2px] before:bg-border/60 before:transition-colors",
+          "hover:before:bg-primary/40",
+          isDragging && "before:bg-primary/70",
+        )}
+      >
+        <span className="relative z-10 flex h-10 w-[6px] flex-col items-center justify-center gap-1">
+          <span className="size-1 rounded-full bg-muted-foreground/60 transition-colors group-hover:bg-primary" />
+          <span className="size-1 rounded-full bg-muted-foreground/60 transition-colors group-hover:bg-primary" />
+          <span className="size-1 rounded-full bg-muted-foreground/60 transition-colors group-hover:bg-primary" />
+        </span>
+      </div>
+
+      <div className="sticky top-4 min-w-0 self-start">
+        <div className="flex h-[calc(100vh-120px)] min-h-[560px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/40 shadow-xl shadow-black/20">
+          <div className="flex items-center justify-between border-b border-border/60 bg-background/70 px-3 py-2 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <Network className="size-4 text-primary" />
+              <p className="text-xs font-semibold tracking-tight">Companies graph</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={cyclePreset}
+                title="Cycle width: 30 / 50 / 70%"
+                className="rounded-full border border-border/50 bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:text-foreground"
+              >
+                {Math.round(rightPercent)}%
+              </button>
+              <button
+                type="button"
+                onClick={onCloseGraph}
+                className="flex size-7 items-center justify-center rounded-full border border-border/50 bg-background/70 text-muted-foreground transition hover:text-foreground"
+                aria-label="Close graph"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="relative flex-1">
+            <CompaniesForceGraphTab
+              baseQueryString={baseQueryString}
+              returnToPath={returnToPath}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ResultsControlStrip({
   activeTab,
   onActiveTabChange,
@@ -1149,6 +1366,8 @@ function ResultsControlStrip({
   onSortChange,
   view,
   onViewChange,
+  graphOpen,
+  onToggleGraph,
 }: {
   activeTab: DashboardTab;
   onActiveTabChange: (next: DashboardTab) => void;
@@ -1156,6 +1375,8 @@ function ResultsControlStrip({
   onSortChange: (next: SortOption) => void;
   view: ResultsView;
   onViewChange: (next: ResultsView) => void;
+  graphOpen: boolean;
+  onToggleGraph: () => void;
 }) {
   return (
     <>
@@ -1163,12 +1384,25 @@ function ResultsControlStrip({
         <SegmentedControl
           compact
           options={[
-            { value: "results", label: "Results" },
-            { value: "analytics", label: "Analytics" },
+            { value: "results", label: "Results", icon: <Rows3 className="size-3.5" /> },
+            { value: "analytics", label: "Analytics", icon: <BarChart3 className="size-3.5" /> },
           ]}
           value={activeTab}
           onChange={(next) => onActiveTabChange(next as DashboardTab)}
         />
+      </ControlGroup>
+
+      <ControlGroup label="Companion">
+        <Button
+          type="button"
+          variant={graphOpen ? "default" : "outline"}
+          size="sm"
+          onClick={onToggleGraph}
+          className="rounded-full"
+        >
+          <Network className="size-3.5" />
+          {graphOpen ? "Hide graph" : "Show graph"}
+        </Button>
       </ControlGroup>
 
       <ControlGroup label="Sort">

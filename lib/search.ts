@@ -143,6 +143,32 @@ function buildFilterWhereClause(
   }
 }
 
+// Chronological ranking for YC batches. Handles both the modern "Spring 2026" form and
+// the legacy compact form ("W21" / "S23" / "F24"). Unknown/null batches rank last (-1).
+// Season order within a year: Winter (Jan–Mar) < Spring (Apr–Jun) < Summer (Jul–Sep) < Fall (Oct–Dec).
+const BATCH_ORDER_EXPR = `
+  CASE
+    WHEN c.batch ~ '^(Winter|Spring|Summer|Fall)\\s+[0-9]{4}$' THEN
+      (SUBSTRING(c.batch FROM '[0-9]{4}')::int) * 4
+      + CASE SPLIT_PART(c.batch, ' ', 1)
+          WHEN 'Winter' THEN 0
+          WHEN 'Spring' THEN 1
+          WHEN 'Summer' THEN 2
+          WHEN 'Fall'   THEN 3
+          ELSE -1
+        END
+    WHEN c.batch ~ '^[WSF][0-9]{2}$' THEN
+      (2000 + SUBSTRING(c.batch FROM '[0-9]{2}')::int) * 4
+      + CASE SUBSTRING(c.batch FROM 1 FOR 1)
+          WHEN 'W' THEN 0
+          WHEN 'S' THEN 2
+          WHEN 'F' THEN 3
+          ELSE -1
+        END
+    ELSE -1
+  END
+`;
+
 function buildSortClause(sort: SearchParams["sort"], query: string) {
   if (sort === "newest") {
     return "ORDER BY c.launched_at DESC NULLS LAST, c.top_company DESC, c.name ASC";
@@ -154,9 +180,9 @@ function buildSortClause(sort: SearchParams["sort"], query: string) {
     return "ORDER BY c.name ASC";
   }
   if (query.trim().length > 0) {
-    return "ORDER BY c.top_company DESC, c.team_size DESC NULLS LAST, c.name ASC";
+    return `ORDER BY c.top_company DESC, ${BATCH_ORDER_EXPR} DESC NULLS LAST, c.team_size DESC NULLS LAST, c.name ASC`;
   }
-  return "ORDER BY c.top_company DESC, c.name ASC";
+  return `ORDER BY ${BATCH_ORDER_EXPR} DESC NULLS LAST, c.top_company DESC, c.name ASC`;
 }
 
 function escapeLikePattern(value: string) {
@@ -200,7 +226,7 @@ function buildHybridSortClause(sort: SearchParams["sort"]) {
   if (sort === "name") {
     return "ORDER BY c.name ASC, hybrid_score DESC";
   }
-  return "ORDER BY hybrid_score DESC, c.top_company DESC, c.team_size DESC NULLS LAST, c.name ASC";
+  return `ORDER BY hybrid_score DESC, ${BATCH_ORDER_EXPR} DESC NULLS LAST, c.top_company DESC, c.team_size DESC NULLS LAST, c.name ASC`;
 }
 
 function computeKeywordScore(

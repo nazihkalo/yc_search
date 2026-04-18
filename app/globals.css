@@ -80,6 +80,7 @@
   --radius-xl: calc(var(--radius) + 0.25rem);
   --font-sans: var(--font-ui-sans);
   --font-mono: var(--font-ui-mono);
+  --font-display: var(--font-ui-display);
 }
 
 * {

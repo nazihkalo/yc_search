@@ -107,6 +107,7 @@ export async function isPgVectorReady() {
 
   const row = result.rows[0];
   pgvectorReady = Boolean(row?.installed) && row?.embeddings_udt === "vector" && row?.queries_udt === "vector";
+  console.info("[pgvector] ready=%s installed=%s embeddings_udt=%s queries_udt=%s", pgvectorReady, row?.installed, row?.embeddings_udt, row?.queries_udt);
   return pgvectorReady;
 }
 

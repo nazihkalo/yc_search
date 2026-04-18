@@ -35,6 +35,7 @@ import {
 } from "@/components/niko-table/core/data-table-structure";
 import { FILTER_VARIANTS } from "@/components/niko-table/lib/constants";
 import type { DataTableColumnDef } from "@/components/niko-table/types";
+import { badgeStyleFor } from "@/lib/colors";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
@@ -233,7 +234,7 @@ export function ResultsNikoPreviewTable({
           const company = row.original;
 
           return (
-            <div className="min-w-[260px] py-1">
+            <div className="min-w-[260px] py-1.5">
               <div className="flex items-start gap-3">
                 <CompanyLogo
                   key={company.small_logo_thumb_url ?? `fallback-${company.id}`}
@@ -242,7 +243,9 @@ export function ResultsNikoPreviewTable({
                 />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{company.name}</p>
+                    <p className="text-base font-semibold tracking-tight text-foreground">
+                      {company.name}
+                    </p>
                     {typeof company.score === "number" &&
                     !visibleColumns.includes("score") ? (
                       <Badge variant="secondary">
@@ -251,11 +254,11 @@ export function ResultsNikoPreviewTable({
                     ) : null}
                     {company.top_company ? <Badge>Top</Badge> : null}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                  <p className="mt-1 line-clamp-2 text-[0.9375rem] leading-snug text-muted-foreground">
                     {company.one_liner ?? "No one-liner available."}
                   </p>
                   {company.all_locations ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-xs text-muted-foreground/90">
                       {company.all_locations}
                     </p>
                   ) : null}
@@ -321,11 +324,12 @@ export function ResultsNikoPreviewTable({
         cell: ({ row }) => (
           <div className="flex min-w-[120px] flex-wrap gap-1.5">
             {row.original.industries.length > 0 ? (
-              row.original.industries.slice(0, 1).map((industry) => (
+              row.original.industries.slice(0, 2).map((industry) => (
                 <Badge
                   key={`${row.original.id}-industry-${industry}`}
-                  variant="muted"
-                  className="max-w-[104px] truncate"
+                  variant="tinted"
+                  className="max-w-[112px] truncate border"
+                  style={badgeStyleFor(`ind:${industry}`)}
                 >
                   {industry}
                 </Badge>
@@ -366,17 +370,19 @@ export function ResultsNikoPreviewTable({
             {row.original.tags.length > 0 ? (
               <>
                 {row.original.tags.slice(0, 2).map((tag) => (
-                <span
-                  key={`${row.original.id}-tag-${tag}`}
-                  className="max-w-[100px] truncate rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground"
-                >
-                  {tag}
-                </span>
+                  <Badge
+                    key={`${row.original.id}-tag-${tag}`}
+                    variant="tinted"
+                    className="max-w-[112px] truncate border"
+                    style={badgeStyleFor(`tag:${tag}`)}
+                  >
+                    {tag}
+                  </Badge>
                 ))}
                 {row.original.tags.length > 2 ? (
-                  <span className="rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+                  <Badge variant="outline" className="text-muted-foreground">
                     +{row.original.tags.length - 2}
-                  </span>
+                  </Badge>
                 ) : null}
               </>
             ) : (
@@ -416,11 +422,20 @@ export function ResultsNikoPreviewTable({
             <DataTableColumnSortMenu />
           </DataTableColumnHeader>
         ),
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {row.original.batch ?? "N/A"}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const batch = row.original.batch;
+          return batch ? (
+            <Badge
+              variant="tinted"
+              className="border whitespace-nowrap"
+              style={badgeStyleFor(`batch:${batch}`)}
+            >
+              {batch}
+            </Badge>
+          ) : (
+            <span className="text-sm text-muted-foreground">N/A</span>
+          );
+        },
       },
       {
         accessorKey: "stage",

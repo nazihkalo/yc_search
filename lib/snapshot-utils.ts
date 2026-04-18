@@ -15,6 +15,39 @@ export function extractUrlsFromMarkdown(markdown: string) {
   return [...unique].slice(0, 100);
 }
 
+export function extractImagesFromMarkdown(markdown: string, limit = 6) {
+  const markdownImages = [...markdown.matchAll(/!\[[^\]]*?\]\((https?:\/\/[^\s)]+)\)/g)].map(
+    (match) => match[1],
+  );
+  const htmlImages = [...markdown.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+)["']/gi)].map(
+    (match) => match[1],
+  );
+  const unique = new Set<string>();
+  const results: string[] = [];
+
+  for (const rawUrl of [...markdownImages, ...htmlImages]) {
+    try {
+      const normalized = new URL(rawUrl).toString();
+      if (unique.has(normalized)) continue;
+      const lower = normalized.toLowerCase();
+      const looksLikeImage =
+        /\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/.test(lower) ||
+        lower.includes("/logo") ||
+        lower.includes("/cdn-cgi/image") ||
+        lower.includes("images.unsplash") ||
+        lower.includes("imgur.com");
+      if (!looksLikeImage) continue;
+      unique.add(normalized);
+      results.push(normalized);
+      if (results.length >= limit) break;
+    } catch {
+      // ignore malformed URLs
+    }
+  }
+
+  return results;
+}
+
 export function extractDescriptionFromMarkdown(markdown: string) {
   const withoutLinks = markdown.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
   const lines = withoutLinks

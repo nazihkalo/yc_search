@@ -125,6 +125,89 @@ ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_failed INTEGER;
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_changed INTEGER;
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_unchanged INTEGER;
 
+CREATE TABLE IF NOT EXISTS founders (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  full_name TEXT NOT NULL,
+  title TEXT,
+  bio TEXT,
+  linkedin_url TEXT,
+  twitter_url TEXT,
+  github_url TEXT,
+  personal_site_url TEXT,
+  wikipedia_url TEXT,
+  image_url TEXT,
+  source TEXT NOT NULL DEFAULT 'yc_profile',
+  needs_github_enrich INTEGER NOT NULL DEFAULT 0,
+  needs_site_crawl INTEGER NOT NULL DEFAULT 0,
+  needs_exa_enrich INTEGER NOT NULL DEFAULT 0,
+  last_enriched_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, full_name),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS founder_snapshots (
+  founder_id BIGINT NOT NULL,
+  source TEXT NOT NULL,
+  url TEXT NOT NULL,
+  content_markdown TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  error TEXT,
+  scraped_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (founder_id, source, url),
+  FOREIGN KEY (founder_id) REFERENCES founders(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS founder_github (
+  founder_id BIGINT PRIMARY KEY,
+  github_username TEXT NOT NULL,
+  name TEXT,
+  bio TEXT,
+  company TEXT,
+  location TEXT,
+  blog TEXT,
+  public_repos INTEGER,
+  followers INTEGER,
+  following INTEGER,
+  top_languages JSONB NOT NULL DEFAULT '[]'::jsonb,
+  top_repos JSONB NOT NULL DEFAULT '[]'::jsonb,
+  error TEXT,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (founder_id) REFERENCES founders(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS founder_mentions (
+  id BIGSERIAL PRIMARY KEY,
+  founder_id BIGINT NOT NULL,
+  url TEXT NOT NULL,
+  title TEXT,
+  excerpt TEXT,
+  kind TEXT NOT NULL DEFAULT 'other',
+  source TEXT NOT NULL DEFAULT 'exa',
+  published_at TIMESTAMPTZ,
+  discovered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (founder_id, url),
+  FOREIGN KEY (founder_id) REFERENCES founders(id) ON DELETE CASCADE
+);
+
+ALTER TABLE founders ADD COLUMN IF NOT EXISTS background JSONB;
+ALTER TABLE founders ADD COLUMN IF NOT EXISTS background_fetched_at TIMESTAMPTZ;
+
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS founders_upserted INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS founders_extracted INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS github_enriched INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS github_failed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS founder_sites_crawled INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS founder_sites_failed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS exa_founders_queried INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS exa_mentions_added INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS exa_backgrounds_fetched INTEGER;
+
 CREATE INDEX IF NOT EXISTS idx_companies_batch ON companies(batch);
 CREATE INDEX IF NOT EXISTS idx_companies_launched_at ON companies(launched_at);
 CREATE INDEX IF NOT EXISTS idx_companies_stage ON companies(stage);
@@ -143,4 +226,11 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_source_hash ON company_embeddings(sour
 CREATE INDEX IF NOT EXISTS idx_query_embeddings_updated_at ON query_embeddings(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_status ON sync_runs(status);
+
+CREATE INDEX IF NOT EXISTS idx_founders_company_id ON founders(company_id);
+CREATE INDEX IF NOT EXISTS idx_founders_needs_github_enrich ON founders(needs_github_enrich);
+CREATE INDEX IF NOT EXISTS idx_founders_needs_site_crawl ON founders(needs_site_crawl);
+CREATE INDEX IF NOT EXISTS idx_founders_needs_exa_enrich ON founders(needs_exa_enrich);
+CREATE INDEX IF NOT EXISTS idx_founder_snapshots_founder_id ON founder_snapshots(founder_id);
+CREATE INDEX IF NOT EXISTS idx_founder_mentions_founder_id ON founder_mentions(founder_id);
 `;

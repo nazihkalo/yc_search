@@ -11,6 +11,11 @@ const baseEnvSchema = z.object({
   SYNC_RUN_TIMEOUT_MS: z.string().optional(),
   YC_PROFILE_FETCH_TIMEOUT_MS: z.string().optional(),
   YC_PROFILE_FETCH_RETRIES: z.string().optional(),
+  SYNC_GITHUB_LIMIT: z.string().optional(),
+  SYNC_FOUNDER_SITE_CRAWL_LIMIT: z.string().optional(),
+  SYNC_EXA_LIMIT: z.string().optional(),
+  GITHUB_TOKEN: z.string().optional(),
+  EXA_API_KEY: z.string().optional(),
 });
 
 function parseBaseEnv() {
@@ -23,6 +28,11 @@ function parseBaseEnv() {
     SYNC_RUN_TIMEOUT_MS: process.env.SYNC_RUN_TIMEOUT_MS,
     YC_PROFILE_FETCH_TIMEOUT_MS: process.env.YC_PROFILE_FETCH_TIMEOUT_MS,
     YC_PROFILE_FETCH_RETRIES: process.env.YC_PROFILE_FETCH_RETRIES,
+    SYNC_GITHUB_LIMIT: process.env.SYNC_GITHUB_LIMIT,
+    SYNC_FOUNDER_SITE_CRAWL_LIMIT: process.env.SYNC_FOUNDER_SITE_CRAWL_LIMIT,
+    SYNC_EXA_LIMIT: process.env.SYNC_EXA_LIMIT,
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    EXA_API_KEY: process.env.EXA_API_KEY,
   });
 }
 
@@ -77,6 +87,28 @@ export function getOpenAiApiKey() {
 export function getSqliteImportPath() {
   const value = process.env.SQLITE_IMPORT_PATH?.trim();
   return value && value.length > 0 ? value : "./data/yc_search.sqlite";
+}
+
+export function getSyncGithubLimit() {
+  return parsePositiveInt(process.env.SYNC_GITHUB_LIMIT, 50);
+}
+
+export function getSyncFounderSiteCrawlLimit() {
+  return parsePositiveInt(process.env.SYNC_FOUNDER_SITE_CRAWL_LIMIT, 50);
+}
+
+export function getSyncExaLimit() {
+  return parsePositiveInt(process.env.SYNC_EXA_LIMIT, 20);
+}
+
+export function getGithubToken() {
+  const value = process.env.GITHUB_TOKEN?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
+export function getExaApiKey() {
+  const value = process.env.EXA_API_KEY?.trim();
+  return value && value.length > 0 ? value : null;
 }
 
 export type AppEnv = ReturnType<typeof getEnv>;

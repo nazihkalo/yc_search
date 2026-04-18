@@ -1,6 +1,261 @@
+import { unstable_cache } from "next/cache";
+
 import { isPgVectorReady, parseJsonArray, query, queryOne } from "./db";
 import { parseVectorString } from "./vector-utils";
 import { parseYcCompanyProfileSnapshotMarkdown } from "./yc-company-page";
+
+export type FounderGithubSummary = {
+  username: string;
+  name: string | null;
+  bio: string | null;
+  company: string | null;
+  location: string | null;
+  blog: string | null;
+  publicRepos: number | null;
+  followers: number | null;
+  following: number | null;
+  topLanguages: Array<{ language: string; count: number }>;
+  topRepos: Array<{ name: string; url: string; description: string | null; stars: number; language: string | null }>;
+  fetchedAt: string | null;
+  error: string | null;
+};
+
+export type FounderMentionSummary = {
+  url: string;
+  title: string | null;
+  excerpt: string | null;
+  kind: string;
+  publishedAt: string | null;
+};
+
+export type FounderSiteSnapshotSummary = {
+  url: string;
+  source: string;
+  contentMarkdown: string | null;
+  scrapedAt: string | null;
+  error: string | null;
+};
+
+export type FounderBackgroundSummary = {
+  summary: string | null;
+  previousCompanies: Array<{ name: string; role?: string | null; years?: string | null }>;
+  education: Array<{ school: string; degree?: string | null; field?: string | null }>;
+  notableActivities: string[];
+};
+
+export type EnrichedFounder = {
+  id: number;
+  fullName: string;
+  title: string | null;
+  bio: string | null;
+  linkedinUrl: string | null;
+  twitterUrl: string | null;
+  githubUrl: string | null;
+  personalSiteUrl: string | null;
+  wikipediaUrl: string | null;
+  background: FounderBackgroundSummary | null;
+  github: FounderGithubSummary | null;
+  mentions: FounderMentionSummary[];
+  siteSnapshot: FounderSiteSnapshotSummary | null;
+};
+
+type FounderJoinRow = {
+  id: number;
+  full_name: string;
+  title: string | null;
+  bio: string | null;
+  linkedin_url: string | null;
+  twitter_url: string | null;
+  github_url: string | null;
+  personal_site_url: string | null;
+  wikipedia_url: string | null;
+  background: unknown;
+  github_username: string | null;
+  github_name: string | null;
+  github_bio: string | null;
+  github_company: string | null;
+  github_location: string | null;
+  github_blog: string | null;
+  public_repos: number | null;
+  followers: number | null;
+  following: number | null;
+  top_languages: unknown;
+  top_repos: unknown;
+  github_fetched_at: string | null;
+  github_error: string | null;
+};
+
+function parseBackground(raw: unknown): FounderBackgroundSummary | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const prev = Array.isArray(record.previous_companies) ? record.previous_companies : [];
+  const edu = Array.isArray(record.education) ? record.education : [];
+  const acts = Array.isArray(record.notable_activities) ? record.notable_activities : [];
+  return {
+    summary: typeof record.summary === "string" ? record.summary : null,
+    previousCompanies: prev
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const e = entry as Record<string, unknown>;
+        if (typeof e.name !== "string") return null;
+        return {
+          name: e.name,
+          role: typeof e.role === "string" ? e.role : null,
+          years: typeof e.years === "string" ? e.years : null,
+        };
+      })
+      .filter((value): value is { name: string; role: string | null; years: string | null } => Boolean(value)),
+    education: edu
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const e = entry as Record<string, unknown>;
+        if (typeof e.school !== "string") return null;
+        return {
+          school: e.school,
+          degree: typeof e.degree === "string" ? e.degree : null,
+          field: typeof e.field === "string" ? e.field : null,
+        };
+      })
+      .filter((value): value is { school: string; degree: string | null; field: string | null } => Boolean(value)),
+    notableActivities: acts.filter((value): value is string => typeof value === "string"),
+  };
+}
+
+type FounderMentionRow = {
+  founder_id: number;
+  url: string;
+  title: string | null;
+  excerpt: string | null;
+  kind: string;
+  published_at: string | null;
+};
+
+type FounderSnapshotRow = {
+  founder_id: number;
+  url: string;
+  source: string;
+  content_markdown: string | null;
+  scraped_at: string | null;
+  error: string | null;
+};
+
+export async function getEnrichedFounders(companyId: number): Promise<EnrichedFounder[]> {
+  const founderRows = await query<FounderJoinRow>(`
+      SELECT
+        f.id,
+        f.full_name,
+        f.title,
+        f.bio,
+        f.linkedin_url,
+        f.twitter_url,
+        f.github_url,
+        f.personal_site_url,
+        f.wikipedia_url,
+        f.background,
+        fg.github_username,
+        fg.name AS github_name,
+        fg.bio AS github_bio,
+        fg.company AS github_company,
+        fg.location AS github_location,
+        fg.blog AS github_blog,
+        fg.public_repos,
+        fg.followers,
+        fg.following,
+        fg.top_languages,
+        fg.top_repos,
+        fg.fetched_at AS github_fetched_at,
+        fg.error AS github_error
+      FROM founders f
+      LEFT JOIN founder_github fg ON fg.founder_id = f.id
+      WHERE f.company_id = @company_id
+      ORDER BY f.id ASC
+    `, { company_id: companyId });
+
+  if (founderRows.length === 0) {
+    return [];
+  }
+
+  const founderIds = founderRows.map((row) => row.id);
+  const idsLiteral = `{${founderIds.join(",")}}`;
+
+  const [mentionRows, snapshotRows] = await Promise.all([
+    query<FounderMentionRow>(`
+      SELECT founder_id, url, title, excerpt, kind, published_at
+      FROM founder_mentions
+      WHERE founder_id = ANY(@ids::bigint[])
+      ORDER BY discovered_at DESC
+    `, { ids: idsLiteral }),
+    query<FounderSnapshotRow>(`
+      SELECT founder_id, url, source, content_markdown, scraped_at, error
+      FROM founder_snapshots
+      WHERE founder_id = ANY(@ids::bigint[])
+        AND source = 'personal_site'
+      ORDER BY scraped_at DESC
+    `, { ids: idsLiteral }),
+  ]);
+
+  const mentionsByFounder = new Map<number, FounderMentionSummary[]>();
+  for (const row of mentionRows) {
+    const existing = mentionsByFounder.get(row.founder_id);
+    const entry: FounderMentionSummary = {
+      url: row.url,
+      title: row.title,
+      excerpt: row.excerpt,
+      kind: row.kind,
+      publishedAt: row.published_at,
+    };
+    if (existing) existing.push(entry);
+    else mentionsByFounder.set(row.founder_id, [entry]);
+  }
+
+  const snapshotByFounder = new Map<number, FounderSiteSnapshotSummary>();
+  for (const row of snapshotRows) {
+    if (snapshotByFounder.has(row.founder_id)) continue;
+    snapshotByFounder.set(row.founder_id, {
+      url: row.url,
+      source: row.source,
+      contentMarkdown: row.content_markdown,
+      scrapedAt: row.scraped_at,
+      error: row.error,
+    });
+  }
+
+  return founderRows.map<EnrichedFounder>((row) => {
+    const github: FounderGithubSummary | null = row.github_username || row.github_error
+      ? {
+          username: row.github_username ?? "",
+          name: row.github_name,
+          bio: row.github_bio,
+          company: row.github_company,
+          location: row.github_location,
+          blog: row.github_blog,
+          publicRepos: row.public_repos,
+          followers: row.followers,
+          following: row.following,
+          topLanguages: Array.isArray(row.top_languages) ? row.top_languages as FounderGithubSummary["topLanguages"] : [],
+          topRepos: Array.isArray(row.top_repos) ? row.top_repos as FounderGithubSummary["topRepos"] : [],
+          fetchedAt: row.github_fetched_at,
+          error: row.github_error,
+        }
+      : null;
+
+    return {
+      id: row.id,
+      fullName: row.full_name,
+      title: row.title,
+      bio: row.bio,
+      linkedinUrl: row.linkedin_url,
+      twitterUrl: row.twitter_url,
+      githubUrl: row.github_url,
+      personalSiteUrl: row.personal_site_url,
+      wikipediaUrl: row.wikipedia_url,
+      background: parseBackground(row.background),
+      github,
+      mentions: mentionsByFounder.get(row.id) ?? [],
+      siteSnapshot: snapshotByFounder.get(row.id) ?? null,
+    };
+  });
+}
 
 type CompanyDetailRow = {
   id: number;
@@ -149,6 +404,8 @@ export async function getCompanyDetail(companyId: number) {
     ? parseYcCompanyProfileSnapshotMarkdown(row.content_markdown_yc_profile)
     : { socials: [], founders: [], newsItems: [], launches: [] };
 
+  const enrichedFounders = await getEnrichedFounders(companyId);
+
   return {
     ...row,
     former_names: parseJsonArray(row.former_names),
@@ -169,10 +426,11 @@ export async function getCompanyDetail(companyId: number) {
     yc_profile_founders: ycProfile.founders,
     yc_profile_news_items: ycProfile.newsItems,
     yc_profile_launches: ycProfile.launches,
+    enriched_founders: enrichedFounders,
   };
 }
 
-export async function getSimilarCompanies(companyId: number, limit = 8) {
+async function getSimilarCompaniesUncached(companyId: number, limit = 8) {
   const target = await queryOne<{ vector: string | null }>(
     "SELECT vector FROM company_embeddings WHERE company_id = @id",
     { id: companyId },
@@ -264,3 +522,9 @@ export async function getSimilarCompanies(companyId: number, limit = 8) {
       similarity: Number(candidate.similarity.toFixed(4)),
     }));
 }
+
+export const getSimilarCompanies = unstable_cache(
+  getSimilarCompaniesUncached,
+  ["similar-companies-v1"],
+  { revalidate: 3600, tags: ["similar-companies"] },
+);

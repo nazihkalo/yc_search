@@ -16,6 +16,10 @@
     "sync:scrape:yc-profile": "tsx scripts/scrape-yc-company-pages.ts",
     "test:crawl4ai:sample": "tsx scripts/test-crawl4ai-sample.ts",
     "sync:embed": "tsx scripts/embed-companies.ts",
+    "sync:founders": "tsx scripts/extract-founders.ts",
+    "sync:founders:github": "tsx scripts/enrich-founders-github.ts",
+    "sync:founders:sites": "tsx scripts/crawl-founder-sites.ts",
+    "sync:founders:exa": "tsx scripts/enrich-founders-exa.ts",
     "sync:incremental": "tsx scripts/sync-incremental.ts",
     "sync:all": "npm run db:migrate && npm run sync:incremental"
   },
@@ -39,8 +43,10 @@
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-force-graph-3d": "^1.29.1",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.5.0",
+    "three": "^0.184.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -50,6 +56,7 @@
     "@types/pg": "^8.18.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.184.0",
     "better-sqlite3": "^12.6.2",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
