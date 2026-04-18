@@ -12,20 +12,20 @@ import {
   Users,
 } from "lucide-react";
 
-import { CompaniesForceGraphTab } from "../../../components/graph/companies-force-graph-lazy";
-import { CompanyLinksRow } from "../../../components/dashboard/company-links-row";
-import { ThemeToggle } from "../../../components/theme-toggle";
-import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
-import { badgeStyleFor, nodeColorFor } from "../../../lib/colors";
-import { buildCompanyLinks } from "../../../lib/company-links";
-import { getCompanyDetail } from "../../../lib/company-details";
+import { CompaniesForceGraphTab } from "../../../../components/graph/companies-force-graph-lazy";
+import { CompanyLinksRow } from "../../../../components/dashboard/company-links-row";
+import { ThemeToggle } from "../../../../components/theme-toggle";
+import { Badge } from "../../../../components/ui/badge";
+import { Button } from "../../../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../../components/ui/card";
+import { badgeStyleFor, nodeColorFor } from "../../../../lib/colors";
+import { buildCompanyLinks } from "../../../../lib/company-links";
+import { getCompanyDetail } from "../../../../lib/company-details";
 import {
   extractDescriptionFromMarkdown,
   extractImagesFromMarkdown,
   extractUrlsFromMarkdown,
-} from "../../../lib/snapshot-utils";
+} from "../../../../lib/snapshot-utils";
 import {
   SimilarCompaniesPanel,
   SimilarCompaniesSkeleton,
@@ -45,7 +45,7 @@ export default async function CompanyPage({
     notFound();
   }
 
-  const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : "/";
+  const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : "/dashboard";
 
   const company = await getCompanyDetail(companyId);
   if (!company) {

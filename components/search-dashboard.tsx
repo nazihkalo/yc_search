@@ -12,7 +12,7 @@ import {
   TableProperties,
   X,
 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
@@ -145,6 +145,7 @@ function setCachedSearchResponse(cacheKey: string, payload: SearchResponse) {
 export function SearchDashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [activeTab, setActiveTab] = useState<DashboardTab>((searchParams.get("tab") as DashboardTab) ?? "results");
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
@@ -299,7 +300,7 @@ export function SearchDashboard() {
   }, [baseQueryString]);
 
   const returnToPath = useMemo(
-    () => `/?${view === "table" ? tableQueryString : baseQueryString}`,
+    () => `/dashboard?${view === "table" ? tableQueryString : baseQueryString}`,
     [baseQueryString, tableQueryString, view],
   );
 
@@ -340,8 +341,8 @@ export function SearchDashboard() {
       params.set("pageSize", String(tablePageSize));
     }
 
-    router.replace(`/?${params.toString()}`, { scroll: false });
-  }, [baseQueryString, page, router, tablePageSize, view]);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [baseQueryString, page, pathname, router, tablePageSize, view]);
 
   useEffect(() => {
     if (activeTab !== "analytics") {

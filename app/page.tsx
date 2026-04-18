@@ -1,11 +1,27 @@
 import { Suspense } from "react";
 
-import { SearchDashboard } from "../components/search-dashboard";
+import { Features } from "../components/landing/features";
+import { Hero } from "../components/landing/hero";
+import { LandingFooter } from "../components/landing/footer";
+import { MarketingNav } from "../components/landing/marketing-nav";
+import { PricingTeaser } from "../components/landing/pricing-teaser";
+import { StatsStrip } from "../components/landing/stats-strip";
+import { VideoEmbed } from "../components/landing/video-embed";
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm text-zinc-500">Loading dashboard...</div>}>
-      <SearchDashboard />
-    </Suspense>
+    <div className="min-h-screen">
+      <MarketingNav />
+      <main>
+        <Hero />
+        <Suspense fallback={null}>
+          <StatsStrip />
+        </Suspense>
+        <VideoEmbed />
+        <Features />
+        <PricingTeaser />
+      </main>
+      <LandingFooter />
+    </div>
   );
 }

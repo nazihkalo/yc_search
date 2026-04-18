@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 
 import { ThemeProvider } from "../components/providers/theme-provider";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -38,12 +40,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className="dark">
-      <body className={`${sans.variable} ${mono.variable} ${display.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
-        <ThemeProvider>
-          <TooltipProvider>{children}</TooltipProvider>
-        </ThemeProvider>
-      </body>
-    </html>
+    <ClerkProvider
+      afterSignOutUrl="/"
+      appearance={{
+        baseTheme: dark,
+        variables: {
+          colorPrimary: "oklch(0.72 0.18 60)",
+          fontFamily: "var(--font-ui-sans)",
+        },
+      }}
+    >
+      <html lang="en" suppressHydrationWarning className="dark">
+        <body className={`${sans.variable} ${mono.variable} ${display.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
+          <ThemeProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ThemeProvider>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

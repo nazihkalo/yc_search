@@ -233,4 +233,29 @@ CREATE INDEX IF NOT EXISTS idx_founders_needs_site_crawl ON founders(needs_site_
 CREATE INDEX IF NOT EXISTS idx_founders_needs_exa_enrich ON founders(needs_exa_enrich);
 CREATE INDEX IF NOT EXISTS idx_founder_snapshots_founder_id ON founder_snapshots(founder_id);
 CREATE INDEX IF NOT EXISTS idx_founder_mentions_founder_id ON founder_mentions(founder_id);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  name TEXT,
+  image_url TEXT,
+  plan TEXT NOT NULL DEFAULT 'free',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_plan ON users(plan);
+
+CREATE TABLE IF NOT EXISTS usage_events (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  cost_units INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_events_user_created ON usage_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_endpoint_created ON usage_events(endpoint, created_at DESC);
 `;
