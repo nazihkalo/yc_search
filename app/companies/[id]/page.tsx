@@ -18,7 +18,7 @@ import { ThemeToggle } from "../../../components/theme-toggle";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
-import { badgeStyleFor } from "../../../lib/colors";
+import { badgeStyleFor, nodeColorFor } from "../../../lib/colors";
 import { buildCompanyLinks } from "../../../lib/company-links";
 import { getCompanyDetail } from "../../../lib/company-details";
 import {
@@ -778,29 +778,32 @@ function EnrichedFoundersSection({
             key={founder.id}
             className="rounded-2xl border border-border/50 bg-background/40 p-4"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-semibold text-foreground">{founder.fullName}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {founder.title ?? "Founder"}
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-wrap gap-1.5">
-                {founder.linkedinUrl ? (
-                  <FounderPill href={founder.linkedinUrl} label="in" />
-                ) : null}
-                {founder.twitterUrl ? (
-                  <FounderPill href={founder.twitterUrl} label="X" />
-                ) : null}
-                {founder.githubUrl ? (
-                  <FounderPill href={founder.githubUrl} label="gh" />
-                ) : null}
-                {founder.personalSiteUrl ? (
-                  <FounderPill href={founder.personalSiteUrl} label="site" />
-                ) : null}
-                {founder.wikipediaUrl ? (
-                  <FounderPill href={founder.wikipediaUrl} label="wiki" />
-                ) : null}
+            <div className="flex items-start gap-3">
+              <FounderAvatar founder={founder} />
+              <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground">{founder.fullName}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {founder.title ?? "Founder"}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {founder.linkedinUrl ? (
+                      <FounderPill href={founder.linkedinUrl} label="in" />
+                    ) : null}
+                    {founder.twitterUrl ? (
+                      <FounderPill href={founder.twitterUrl} label="X" />
+                    ) : null}
+                    {founder.githubUrl ? (
+                      <FounderPill href={founder.githubUrl} label="gh" />
+                    ) : null}
+                    {founder.personalSiteUrl ? (
+                      <FounderPill href={founder.personalSiteUrl} label="site" />
+                    ) : null}
+                    {founder.wikipediaUrl ? (
+                      <FounderPill href={founder.wikipediaUrl} label="wiki" />
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -887,6 +890,34 @@ function EnrichedFoundersSection({
                     {founder.github.bio}
                   </p>
                 ) : null}
+                {founder.github.topRepos.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {founder.github.topRepos.slice(0, 3).map((repo) => (
+                      <li key={`${founder.id}-repo-${repo.url}`}>
+                        <a
+                          href={repo.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group flex items-start justify-between gap-2 text-muted-foreground hover:text-foreground"
+                        >
+                          <span className="min-w-0 truncate">
+                            <span className="font-medium text-foreground/90 group-hover:text-foreground">
+                              {repo.name}
+                            </span>
+                            {repo.description ? (
+                              <span className="ml-1 text-muted-foreground/80">
+                                · {repo.description}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground/80">
+                            ★ {repo.stars}
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
 
@@ -943,5 +974,49 @@ function FounderPill({ href, label }: { href: string; label: string }) {
     >
       {label}
     </a>
+  );
+}
+
+function FounderAvatar({
+  founder,
+}: {
+  founder: CompanyDetail["enriched_founders"][number];
+}) {
+  const githubAvatar = founder.github?.username
+    ? `https://github.com/${founder.github.username}.png?size=160`
+    : null;
+
+  if (githubAvatar) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={githubAvatar}
+        alt={`${founder.fullName} profile photo`}
+        className="size-14 shrink-0 rounded-2xl border border-border/60 bg-background/60 object-cover shadow-sm"
+        loading="lazy"
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+
+  const color = nodeColorFor(founder.fullName);
+  const initials = founder.fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return (
+    <div
+      className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-border/60 text-sm font-semibold shadow-sm"
+      style={{
+        backgroundColor: `color-mix(in oklch, ${color} 22%, transparent)`,
+        color,
+      }}
+      aria-hidden
+    >
+      {initials || "·"}
+    </div>
   );
 }
