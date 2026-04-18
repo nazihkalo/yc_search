@@ -22,3 +22,27 @@ data/
 # Temp scaffolding
 nexttmp/
 .envrc
+
+# Video production — large/binary artifacts excluded (source files are committed)
+video/node_modules/
+video/narration.wav
+video/renders/
+video/snapshots/
+video/package-lock.json
+
+# Unused capture artifacts (the composition only needs 01-03 feature PNGs + image-1/4-11 avatars)
+video/captures/yc-search/screenshots/scroll-*.png
+video/captures/yc-search/screenshots/features/04-graph.png
+video/captures/yc-search/screenshots/features/05-graph-hover.png
+video/captures/yc-search/screenshots/features/06-company-profile.png
+video/captures/yc-search/screenshots/features/07-company-profile-scroll.png
+video/captures/yc-search/assets/fonts/
+video/captures/yc-search/assets/svgs/
+video/captures/yc-search/assets/image-2.png
+video/captures/yc-search/assets/image-3.svg
+video/captures/yc-search/assets/favicon.svg
+video/captures/yc-search/assets/website-globe.svg
+video/captures/yc-search/extracted/
+video/captures/yc-search/CLAUDE.md
+video/captures/yc-search/meta.json
+video/captures/yc-search/.cursorrules
