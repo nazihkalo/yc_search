@@ -8,13 +8,12 @@ export function VideoEmbed() {
         />
         <video
           className="relative block h-auto w-full"
-          src="/ycsearch-demo-2x.mp4"
+          src="https://github.com/user-attachments/assets/f47b288e-c32e-4899-932d-ecf423372088"
           autoPlay
           muted
           loop
           playsInline
           preload="metadata"
-          poster="/logos/yc_search_logo.png"
         />
       </div>
     </section>
