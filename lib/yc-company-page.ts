@@ -153,9 +153,18 @@ function pushTextBlock(lines: string[], label: string, value: string | null) {
 }
 
 function splitSection(markdown: string, heading: string) {
-  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = markdown.match(new RegExp(`^## ${escapedHeading}\\n([\\s\\S]*?)(?=^## |\\Z)`, "m"));
-  return match?.[1]?.trim() ?? "";
+  // Split the document into ## sections and look up by heading.
+  // Earlier versions tried to use `(?=^## |\\Z)` as an anchor, but JavaScript
+  // regex treats `\Z` as the literal character `Z` — so any `Z` in section
+  // content (e.g. "Zurich" in a founder bio) truncated the capture.
+  const prefix = `## ${heading}\n`;
+  const sections = markdown.split(/\n(?=## [^#])/);
+  for (const section of sections) {
+    if (section.startsWith(prefix)) {
+      return section.slice(prefix.length).trim();
+    }
+  }
+  return "";
 }
 
 function parseSimpleField(line: string, label: string) {

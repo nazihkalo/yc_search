@@ -4,6 +4,7 @@ import pLimit from "p-limit";
 
 import { closeDb, execute, initializeDatabase, query, queryOne, withTransaction } from "../lib/db";
 import { getYcProfileFetchRetries, getYcProfileFetchTimeoutMs } from "../lib/env";
+import { upsertFoundersForCompany } from "../lib/founders";
 import { sha256 } from "../lib/hash";
 import { YC_PROFILE_SNAPSHOT_SOURCE } from "../lib/snapshot-source";
 import { fetchYcCompanyProfileSnapshot } from "../lib/yc-company-page";
@@ -12,6 +13,7 @@ type ScrapeCandidate = {
   id: number;
   name: string;
   url: string | null;
+  top_company: number;
 };
 
 function formatDuration(seconds: number) {
@@ -77,7 +79,7 @@ export async function scrapeYcCompanyPages(options?: { limit?: number }): Promis
 
   const batchLimit = options?.limit ?? parseLimitArg();
   const candidates = await query<ScrapeCandidate>(`
-      SELECT id, name, url
+      SELECT id, name, url, top_company
       FROM companies
       WHERE needs_yc_profile_scrape = 1
         AND url IS NOT NULL
@@ -234,6 +236,14 @@ export async function scrapeYcCompanyPages(options?: { limit?: number }): Promis
                 WHERE id = @id
               `, { id: candidate.id }, client);
             }
+
+            // Authoritative founder upsert: use the structured YC JSON data (not re-parsed markdown).
+            await upsertFoundersForCompany({
+              companyId: candidate.id,
+              topCompany: Boolean(candidate.top_company),
+              founders: snapshot.founders,
+              client,
+            });
           });
 
           successCount += 1;
