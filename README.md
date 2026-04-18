@@ -4,7 +4,7 @@ Live app: [ycsearch-production.up.railway.app](https://ycsearch-production.up.ra
 
 ## Demo
 
-https://github.com/user-attachments/assets/74e43705-ef9a-41b7-a7db-4c82f4bf8c43
+https://github.com/user-attachments/assets/f47b288e-c32e-4899-932d-ecf423372088
 
 *(Updated product tour — drag `video/renders/yc-search-tour.mp4` into this PR description to replace the link above with the new clip.)*
 
