@@ -18,6 +18,7 @@ import { DashboardCopilotBridge } from "./dashboard/copilot-actions";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
 import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
 import { CompaniesForceGraphTab } from "./graph/companies-force-graph-lazy";
+import type { GraphNode } from "../lib/graph";
 import type {
   AnalyticsResponse,
   FacetItem,
@@ -193,6 +194,33 @@ export function SearchDashboard() {
     const raw = Number(searchParams.get("company"));
     return Number.isFinite(raw) && raw > 0 ? raw : null;
   });
+  const [highlightCompanyId, setHighlightCompanyId] = useState<number | null>(null);
+
+  // When the detail modal is open: lock scroll everywhere + dismiss on Escape.
+  useEffect(() => {
+    if (selectedCompanyId === null) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedCompanyId(null);
+    };
+    window.addEventListener("keydown", onKey);
+
+    // Lock the body (covers any edge-case body scroll).
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    // Lock the browse pane (the actual scroll container in this layout).
+    const pane = document.querySelector("[data-browse-pane]") as HTMLElement | null;
+    const prevPaneOverflow = pane?.style.overflowY ?? "";
+    if (pane) pane.style.overflowY = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevBodyOverflow;
+      if (pane) pane.style.overflowY = prevPaneOverflow;
+    };
+  }, [selectedCompanyId]);
+
   const [error, setError] = useState<string | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [facets, setFacets] = useState<FacetsPayload | null>(null);
@@ -656,16 +684,31 @@ export function SearchDashboard() {
           setActiveTab,
           setGraphOpen,
           setSelectedCompanyId,
+          setHighlightCompanyId,
         }}
       />
 
       {selectedCompanyId !== null ? (
-        <CompanyDetailPanel
-          companyId={selectedCompanyId}
-          onClose={() => setSelectedCompanyId(null)}
-        />
+        /* Outer: scrollable backdrop — clicking empty area dismisses */
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-background/60 backdrop-blur-sm"
+          onClick={() => setSelectedCompanyId(null)}
+        >
+          <div className="flex min-h-full items-start justify-center px-4 py-12">
+            {/* Card — stop click propagation so inner clicks don't close */}
+            <div
+              className="relative w-full max-w-2xl rounded-2xl border border-border/60 bg-background shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <CompanyDetailPanel
+                companyId={selectedCompanyId}
+                onClose={() => setSelectedCompanyId(null)}
+              />
+            </div>
+          </div>
+        </div>
       ) : null}
-      <div className={selectedCompanyId !== null ? "hidden" : "contents"}>
+      <div className="contents">
 
       <div className="space-y-6">
         {/* Search bar */}
@@ -733,6 +776,11 @@ export function SearchDashboard() {
           onCloseGraph={() => setGraphOpen(false)}
           baseQueryString={baseQueryString}
           returnToPath={returnToPath}
+          highlightCompanyId={highlightCompanyId}
+          onGraphNodeClick={(node: GraphNode) => {
+            setSelectedCompanyId(node.id);
+            setHighlightCompanyId(null);
+          }}
         >
         {activeTab === "results" ? (
           <section className="space-y-4">
@@ -1143,6 +1191,8 @@ function SplitLayout({
   onCloseGraph,
   baseQueryString,
   returnToPath,
+  highlightCompanyId,
+  onGraphNodeClick,
   children,
 }: {
   graphOpen: boolean;
@@ -1151,6 +1201,8 @@ function SplitLayout({
   onCloseGraph: () => void;
   baseQueryString: string;
   returnToPath: string;
+  highlightCompanyId?: number | null;
+  onGraphNodeClick?: (node: GraphNode) => void;
   children: React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1220,6 +1272,8 @@ function SplitLayout({
             <CompaniesForceGraphTab
               baseQueryString={baseQueryString}
               returnToPath={returnToPath}
+              highlightCompanyId={highlightCompanyId}
+              onNodeClick={onGraphNodeClick}
             />
           </div>
         </div>
@@ -1294,6 +1348,8 @@ function SplitLayout({
             <CompaniesForceGraphTab
               baseQueryString={baseQueryString}
               returnToPath={returnToPath}
+              highlightCompanyId={highlightCompanyId}
+              onNodeClick={onGraphNodeClick}
             />
           </div>
         </div>

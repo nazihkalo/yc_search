@@ -12,6 +12,7 @@ type RenderedNode = GraphNode & {
   __color: string;
   __size: number;
   __ring: boolean;
+  __highlighted: boolean;
 };
 
 type ColorBy = "batch" | "industry" | "stage";
@@ -58,11 +59,15 @@ export function CompaniesForceGraph({
   data,
   returnToPath,
   onHoverNode,
+  onNodeClick,
+  highlightCompanyId,
   isFetching,
 }: {
   data: GraphData;
   returnToPath: string;
   onHoverNode?: (node: GraphNode | null) => void;
+  onNodeClick?: (node: GraphNode) => void;
+  highlightCompanyId?: number | null;
   isFetching?: boolean;
 }) {
   const router = useRouter();
@@ -87,11 +92,17 @@ export function CompaniesForceGraph({
         ? Math.log10(node.team_size + 1) / Math.log10(maxTeamSize + 1)
         : 0;
       const baseSize = 1 + scale * 6;
+      const isHighlighted = node.id === highlightCompanyId;
       return {
         ...node,
         __color: nodeColorFor(colorKey),
-        __size: node.isFocus ? Math.max(baseSize * 2.2, 10) : baseSize,
+        __size: node.isFocus
+          ? Math.max(baseSize * 2.2, 10)
+          : isHighlighted
+          ? Math.max(baseSize * 2.5, 12)
+          : baseSize,
         __ring: Boolean(node.isFocus),
+        __highlighted: isHighlighted,
       };
     });
 
@@ -102,7 +113,7 @@ export function CompaniesForceGraph({
     }));
 
     return { nodes, links };
-  }, [data, colorBy]);
+  }, [data, colorBy, highlightCompanyId]);
 
   const legendEntries = useMemo(() => {
     const counts = new Map<string, number>();
@@ -129,11 +140,15 @@ export function CompaniesForceGraph({
     (node: unknown) => {
       const casted = node as GraphNode | null;
       if (!casted) return;
-      router.push(
-        `/companies/${casted.id}?returnTo=${encodeURIComponent(returnToPath)}`,
-      );
+      if (onNodeClick) {
+        onNodeClick(casted);
+      } else {
+        router.push(
+          `/companies/${casted.id}?returnTo=${encodeURIComponent(returnToPath)}`,
+        );
+      }
     },
-    [router, returnToPath],
+    [router, returnToPath, onNodeClick],
   );
 
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -161,23 +176,28 @@ export function CompaniesForceGraph({
   }, [preparedData]);
 
   const buildFocusHalo = useCallback((node: RenderedNode): THREE.Object3D => {
-    if (!node.__ring) {
-      // Empty object — renders nothing, but satisfies the NodeAccessor type.
+    if (!node.__ring && !node.__highlighted) {
       return new THREE.Object3D();
     }
     const haloRadius = Math.max(node.__size * 1.9, 10);
     const geometry = new THREE.SphereGeometry(haloRadius, 16, 16);
     const material = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(node.__color),
+      color: node.__highlighted ? new THREE.Color(0xffffff) : new THREE.Color(node.__color),
       transparent: true,
-      opacity: 0.18,
+      opacity: node.__highlighted ? 0.40 : 0.18,
       depthWrite: false,
     });
     return new THREE.Mesh(geometry, material);
   }, []);
 
-  const hoveredColorKey = hovered ? keyFor(hovered, colorBy) : null;
-  const hoveredChipKey = hovered?.batch ?? null;
+  const pinnedNode = useMemo(
+    () => (highlightCompanyId ? (preparedData.nodes.find((n) => n.id === highlightCompanyId) ?? null) : null),
+    [highlightCompanyId, preparedData.nodes],
+  );
+
+  const activeNode = hovered ?? pinnedNode;
+  const hoveredColorKey = activeNode ? keyFor(activeNode, colorBy) : null;
+  const hoveredChipKey = activeNode?.batch ?? null;
 
   const tooltipStyle = cursor
     ? (() => {
@@ -245,20 +265,25 @@ export function CompaniesForceGraph({
         {data.meta.nodeCount} nodes · {data.meta.linkCount} edges
       </div>
 
-      {hovered && tooltipStyle ? (
+      {activeNode ? (
         <div
           className="pointer-events-none absolute z-20 rounded-2xl border border-border/60 bg-background/95 p-3 shadow-xl shadow-black/40 backdrop-blur"
-          style={{
-            left: tooltipStyle.left,
-            top: tooltipStyle.top,
-            width: tooltipStyle.width,
-          }}
+          style={
+            hovered && tooltipStyle
+              ? { left: tooltipStyle.left, top: tooltipStyle.top, width: tooltipStyle.width }
+              : { left: 16, bottom: 40, width: 280 }
+          }
         >
+          {!hovered && pinnedNode ? (
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/70">
+              Referenced company
+            </p>
+          ) : null}
           <div className="flex items-start gap-3">
-            {hovered.small_logo_thumb_url ? (
+            {activeNode.small_logo_thumb_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={hovered.small_logo_thumb_url}
+                src={activeNode.small_logo_thumb_url}
                 alt=""
                 className="size-11 shrink-0 rounded-xl border border-border/60 bg-background/60 object-cover"
               />
@@ -270,35 +295,35 @@ export function CompaniesForceGraph({
                   color: hoveredColorKey ? nodeColorFor(hoveredColorKey) : "inherit",
                 }}
               >
-                {hovered.name.slice(0, 2).toUpperCase()}
+                {activeNode.name.slice(0, 2).toUpperCase()}
               </div>
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-foreground">
-                {hovered.name}
+                {activeNode.name}
               </p>
-              {hovered.one_liner ? (
+              {activeNode.one_liner ? (
                 <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">
-                  {hovered.one_liner}
+                  {activeNode.one_liner}
                 </p>
               ) : null}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {hovered.batch ? (
+                {activeNode.batch ? (
                   <span
                     className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
                     style={badgeStyleFor(`batch:${hoveredChipKey ?? ""}`)}
                   >
-                    {hovered.batch}
+                    {activeNode.batch}
                   </span>
                 ) : null}
-                {hovered.industry ? (
+                {activeNode.industry ? (
                   <span className="text-[10px] text-muted-foreground">
-                    · {hovered.industry}
+                    · {activeNode.industry}
                   </span>
                 ) : null}
-                {hovered.stage ? (
+                {activeNode.stage ? (
                   <span className="text-[10px] text-muted-foreground">
-                    · {hovered.stage}
+                    · {activeNode.stage}
                   </span>
                 ) : null}
               </div>
