@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   Network,
   Rows3,
+  Search,
   TableProperties,
   X,
 } from "lucide-react";
@@ -138,6 +139,32 @@ export function SearchDashboard() {
 
   const [activeTab, setActiveTab] = useState<DashboardTab>((searchParams.get("tab") as DashboardTab) ?? "results");
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
+
+  // draftQuery drives the search input; query is the debounced/committed value
+  // that triggers API calls. Using a ref to read the latest committed value
+  // inside the debounce without adding it to the effect dependency array.
+  const [draftQuery, setDraftQuery] = useState(query);
+  const queryRef = useRef(query);
+
+  // Keep the input in sync when the AI (or any external setter) changes query.
+  useEffect(() => {
+    queryRef.current = query;
+    setDraftQuery(query);
+  }, [query]);
+
+  // Debounce typed input → commit to query after 350 ms.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (draftQuery !== queryRef.current) {
+        queryRef.current = draftQuery;
+        setPage(1);
+        setQuery(draftQuery);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftQuery]);
+
   const [sort, setSort] = useState<SortOption>((searchParams.get("sort") as SortOption) ?? "relevance");
   const [view, setView] = useState<ResultsView>((searchParams.get("view") as ResultsView) ?? "table");
   const [tags, setTags] = useState<string[]>(parseCsv(searchParams.get("tags")));
@@ -641,6 +668,49 @@ export function SearchDashboard() {
       <div className={selectedCompanyId !== null ? "hidden" : "contents"}>
 
       <div className="space-y-6">
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={draftQuery}
+            onChange={(e) => setDraftQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const v = draftQuery.trim();
+                queryRef.current = v;
+                setPage(1);
+                setQuery(v);
+                setDraftQuery(v);
+              }
+              if (e.key === "Escape") {
+                queryRef.current = "";
+                setPage(1);
+                setQuery("");
+                setDraftQuery("");
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            placeholder="Search companies by name, idea, or description…"
+            className="w-full rounded-full border border-border/70 bg-background/70 py-2.5 pl-10 pr-9 text-sm placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {draftQuery ? (
+            <button
+              type="button"
+              onClick={() => {
+                queryRef.current = "";
+                setPage(1);
+                setQuery("");
+                setDraftQuery("");
+              }}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
+        </div>
+
         {activeFilters.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {activeFilters.map((filter) => (
@@ -1252,58 +1322,76 @@ function ResultsControlStrip({
   onToggleGraph: () => void;
 }) {
   return (
-    <>
-      <ControlGroup label="Browse">
-        <SegmentedControl
-          compact
-          options={[
-            { value: "results", label: "Results", icon: <Rows3 className="size-3.5" /> },
-            { value: "analytics", label: "Analytics", icon: <BarChart3 className="size-3.5" /> },
-          ]}
-          value={activeTab}
-          onChange={(next) => onActiveTabChange(next as DashboardTab)}
-        />
-      </ControlGroup>
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Browse tabs */}
+      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
+        {(["results", "analytics"] as DashboardTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => onActiveTabChange(tab)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition",
+              activeTab === tab
+                ? "bg-secondary text-secondary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab === "results" ? <Rows3 className="size-3" /> : <BarChart3 className="size-3" />}
+            {tab === "results" ? "Results" : "Analytics"}
+          </button>
+        ))}
+      </div>
 
-      <ControlGroup label="Companion">
-        <Button
-          type="button"
-          variant={graphOpen ? "default" : "outline"}
-          size="sm"
-          onClick={onToggleGraph}
-          className="rounded-full"
-        >
-          <Network className="size-3.5" />
-          {graphOpen ? "Hide graph" : "Show graph"}
-        </Button>
-      </ControlGroup>
+      <div className="flex-1" />
 
-      <ControlGroup label="Sort">
-        <SegmentedControl
-          compact
-          options={[
-            { value: "relevance", label: "Relevance" },
-            { value: "newest", label: "Newest" },
-            { value: "team_size", label: "Team" },
-            { value: "name", label: "Name" },
-          ]}
-          value={sort}
-          onChange={(next) => onSortChange(next as SortOption)}
-        />
-      </ControlGroup>
+      {/* Graph toggle — icon button */}
+      <button
+        type="button"
+        onClick={onToggleGraph}
+        title={graphOpen ? "Hide graph" : "Show graph"}
+        className={cn(
+          "inline-flex size-7 items-center justify-center rounded-full border transition",
+          graphOpen
+            ? "border-primary/40 bg-primary/10 text-primary"
+            : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Network className="size-3.5" />
+      </button>
 
-      <ControlGroup label="Display">
-        <SegmentedControl
-          compact
-          options={[
-            { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
-            { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
-          ]}
-          value={view}
-          onChange={(next) => onViewChange(next as ResultsView)}
-        />
-      </ControlGroup>
-    </>
+      {/* Sort */}
+      <select
+        value={sort}
+        onChange={(e) => onSortChange(e.target.value as SortOption)}
+        className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      >
+        <option value="relevance">Relevance</option>
+        <option value="newest">Newest</option>
+        <option value="team_size">Team size</option>
+        <option value="name">Name</option>
+      </select>
+
+      {/* View toggle — icon-only */}
+      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
+        {(["table", "cards"] as ResultsView[]).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onViewChange(v)}
+            title={v === "table" ? "Table view" : "Card view"}
+            className={cn(
+              "inline-flex size-6 items-center justify-center rounded-full transition",
+              view === v
+                ? "bg-secondary text-secondary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {v === "table" ? <TableProperties className="size-3" /> : <LayoutGrid className="size-3" />}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
