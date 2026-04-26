@@ -127,3 +127,14 @@ a {
 copilotkit-inspector {
   display: none !important;
 }
+
+/* Fix CopilotKit chat height containment — the package ships with
+   height:100% commented out, causing the chat to grow to content height
+   and make the document taller than the viewport (window scroll bug). */
+.copilotKitChat {
+  height: 100%;
+}
+/* Prevent scroll chaining from the messages list to the window. */
+.copilotKitMessages {
+  overscroll-behavior: contain;
+}
