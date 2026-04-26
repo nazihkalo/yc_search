@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
-import type { GraphData } from "../../lib/graph";
+import type { GraphData, GraphNode } from "../../lib/graph";
 
 const CompaniesForceGraph = dynamic(
   () => import("./companies-force-graph").then((mod) => mod.CompaniesForceGraph),
@@ -25,9 +25,13 @@ type FetchState =
 export function CompaniesForceGraphTab({
   baseQueryString,
   returnToPath,
+  highlightCompanyId,
+  onNodeClick,
 }: {
   baseQueryString: string;
   returnToPath: string;
+  highlightCompanyId?: number | null;
+  onNodeClick?: (node: GraphNode) => void;
 }) {
   const [state, setState] = useState<FetchState>({ status: "loading" });
   const [isRefetching, setIsRefetching] = useState(false);
@@ -80,6 +84,8 @@ export function CompaniesForceGraphTab({
           data={state.data}
           returnToPath={returnToPath}
           isFetching={isRefetching}
+          highlightCompanyId={highlightCompanyId}
+          onNodeClick={onNodeClick}
         />
       )}
     </div>

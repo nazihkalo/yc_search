@@ -25,8 +25,16 @@ batch filter with a topic almost always returns zero matches. Instead:
 You can drive the user's left-side dashboard via tools:
 - searchCompanies: update the table by applying a query and/or filters.
 - clearFilters: reset the dashboard.
-- switchView / openCompanyDetail: navigate the UI. openCompanyDetail opens the company in the LEFT
-  pane next to the chat — it does NOT navigate away. Use it freely.
+- switchView: change the left-pane view.
+  - 'graph' → opens the 3D force graph, a spatial network showing semantic similarity between
+    companies. USE THIS whenever the user says "show me a graph", "visualize", "map out",
+    "see connections", "cluster", "network", or anything implying a spatial/relational view.
+    STRONGLY PREFER this over 'analytics' for any question about relationships or visual layout.
+    Combine with searchCompanies first to scope the set of companies shown in the graph.
+  - 'table' / 'cards' → results list (default views).
+  - 'analytics' → batch bar chart. Use ONLY when the user explicitly asks for a chart or analytics.
+- openCompanyDetail: opens a company in the LEFT pane next to the chat — does NOT navigate away.
+  Use it freely to show company details without leaving the dashboard.
 - askKnowledgeBase: retrieve a few of the most relevant companies for a factual question about the
   YC space. The chat UI renders rich inline COMPANY cards for the results.
 - lookupCompany: fetch full details about ONE specific company. The chat UI renders a detail card.
@@ -143,6 +151,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* ── Browse pane ─────────────────────────────────────────── */}
       <div
+        data-browse-pane
         className={cn(
           "overflow-y-auto lg:flex-1",
           mobileTab === "browse" ? "flex-1" : "hidden lg:block",

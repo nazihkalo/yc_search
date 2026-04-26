@@ -72,6 +72,7 @@ export type DashboardBridgeSetters = {
   setActiveTab: (v: DashboardTab) => void;
   setGraphOpen: (v: boolean) => void;
   setSelectedCompanyId: (v: number | null) => void;
+  setHighlightCompanyId: (v: number | null) => void;
 };
 
 type Props = {
@@ -105,6 +106,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       }
       set.setSelectedCompanyId(null);
       set.setGraphOpen(true);
+      set.setHighlightCompanyId(detail?.companyId ?? null);
     };
     const onOpenCompany = (event: Event) => {
       const detail = (event as CustomEvent<{ companyId?: number }>).detail;
@@ -294,6 +296,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           const set = settersRef.current;
           const replace = replaceFilters === true;
 
+          set.setHighlightCompanyId(null);
           if (query !== undefined) set.setQuery(query);
           if (tags !== undefined) {
             set.setTags(replace ? tags : Array.from(new Set([...s.tags, ...tags])));
@@ -427,12 +430,13 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       name: "switchView",
       description:
         "Change the left-pane view. 'table' / 'cards' show results in different layouts. " +
-        "'analytics' switches to the batch-analytics chart.",
+        "'analytics' switches to the batch-analytics chart. " +
+        "'graph' opens the 3D force graph — use this for any visual/spatial/relational request.",
       parameters: [
         {
           name: "view",
           type: "string",
-          description: "'table' | 'cards' | 'analytics'",
+          description: "'table' | 'cards' | 'analytics' | 'graph'",
           required: true,
         },
       ],
@@ -448,6 +452,11 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           if (view === "analytics") {
             set.setActiveTab("analytics");
             return "Switched to analytics.";
+          }
+          if (view === "graph") {
+            set.setActiveTab("results");
+            set.setGraphOpen(true);
+            return "Opened graph view.";
           }
           return `Unknown view: ${view}.`;
         } catch (error) {
