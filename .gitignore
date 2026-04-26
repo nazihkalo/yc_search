@@ -46,3 +46,6 @@ video/captures/yc-search/extracted/
 video/captures/yc-search/CLAUDE.md
 video/captures/yc-search/meta.json
 video/captures/yc-search/.cursorrules
+
+# clerk configuration (can include secrets)
+/.clerk/
