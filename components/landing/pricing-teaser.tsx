@@ -4,11 +4,11 @@ import { ArrowRight, Check } from "lucide-react";
 import { Button } from "../ui/button";
 
 const FREE_FEATURES = [
-  "Unlimited keyword + semantic search",
-  "Full company + founder detail pages",
-  "3D similarity graph",
-  "Ask-YC chat",
-  "Analytics dashboard",
+  "Search every YC company",
+  "Full company and founder profiles",
+  "Similarity graph",
+  "Ask-YC: chat with citations",
+  "Batch trends and analytics",
 ];
 
 const PRO_FEATURES = [
@@ -24,12 +24,12 @@ export function PricingTeaser() {
     <section id="pricing" className="relative mx-auto w-full max-w-[1280px] px-4 py-20 sm:px-6 lg:px-8">
       <div className="max-w-2xl">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Pricing</p>
-        <h2 className="mt-3 font-[family-name:var(--font-ui-display)] text-4xl italic tracking-tight text-foreground sm:text-5xl">
+        <h2 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
           Free while we&apos;re in beta.
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">
-          Sign up today, use everything. Pro tier is in the works for teams who need exports, alerts,
-          and API access.
+          Sign up today, use everything. We&apos;ll add a Pro tier later for teams who want
+          exports, alerts, and API access.
         </p>
       </div>
 
@@ -46,7 +46,7 @@ export function PricingTeaser() {
                 Now
               </span>
             </div>
-            <p className="mt-2 font-[family-name:var(--font-ui-display)] text-5xl italic tracking-tight text-foreground">
+            <p className="mt-2 text-5xl font-semibold tracking-[-0.04em] text-foreground">
               Free
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -78,7 +78,7 @@ export function PricingTeaser() {
               Coming soon
             </span>
           </div>
-          <p className="mt-2 font-[family-name:var(--font-ui-display)] text-5xl italic tracking-tight text-muted-foreground">
+          <p className="mt-2 text-5xl font-semibold tracking-[-0.04em] tabular-nums text-muted-foreground">
             $—
           </p>
           <p className="mt-1 text-sm text-muted-foreground">

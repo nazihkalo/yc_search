@@ -98,6 +98,14 @@ export function getOpenAiApiKey() {
   return value;
 }
 
+export function getAppSalt() {
+  const value = process.env.APP_SALT?.trim();
+  if (value && value.length >= 8) return value;
+  // Stable fallback so hashes are consistent within a deployment if APP_SALT
+  // is unset; rotate by setting a real APP_SALT env var.
+  return "yc-search-default-salt-rotate-me";
+}
+
 export function getSqliteImportPath() {
   const value = process.env.SQLITE_IMPORT_PATH?.trim();
   return value && value.length > 0 ? value : "./data/yc_search.sqlite";

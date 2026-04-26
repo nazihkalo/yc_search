@@ -44,7 +44,7 @@ export async function StatsStrip() {
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/50 bg-border/50 md:grid-cols-4">
         {items.map((item) => (
           <div key={item.label} className="bg-background/80 px-6 py-5">
-            <div className="font-[family-name:var(--font-ui-display)] text-3xl italic tracking-tight text-foreground">
+            <div className="text-3xl font-semibold tracking-[-0.03em] tabular-nums text-foreground">
               {format(item.value)}
             </div>
             <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">

@@ -1,48 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import Image from "next/image";
 import {
   BarChart3,
-  Brain,
   LayoutGrid,
   Network,
   Rows3,
-  Search,
   TableProperties,
   X,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
+import { CompanyDetailPanel } from "./dashboard/company-detail-panel";
+import { DashboardCopilotBridge } from "./dashboard/copilot-actions";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
 import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
 import { CompaniesForceGraphTab } from "./graph/companies-force-graph-lazy";
 import type {
   AnalyticsResponse,
-  ChatResponse,
   FacetItem,
   FacetsPayload,
   SearchResponse,
   TableColumnKey,
 } from "./dashboard/types";
-import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Input } from "./ui/input";
 import { cn } from "../lib/utils";
 
 type AnalyticsColorBy = "none" | "tags" | "industries";
 type ResultsView = "cards" | "table";
 type SortOption = "relevance" | "newest" | "team_size" | "name";
 type DashboardTab = "results" | "analytics";
-
-const QUERY_EXAMPLES = [
-  "B2B SaaS companies in healthcare",
-  "Find YC companies working on climate tech",
-  "AI developer tools hiring in Europe",
-  "Top fintech infrastructure startups",
-];
 
 const CARD_PAGE_SIZE = 24;
 const DEFAULT_TABLE_PAGE_SIZE = 50;
@@ -173,9 +162,10 @@ export function SearchDashboard() {
     const raw = Number(searchParams.get("graphW"));
     return Number.isFinite(raw) && raw >= 0.2 && raw <= 0.85 ? raw : 0.5;
   });
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(() => {
+    const raw = Number(searchParams.get("company"));
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  });
   const [error, setError] = useState<string | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [facets, setFacets] = useState<FacetsPayload | null>(null);
@@ -187,10 +177,6 @@ export function SearchDashboard() {
   });
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
-  const [chatQuestion, setChatQuestion] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [chatResponse, setChatResponse] = useState<ChatResponse | null>(null);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [loadingMoreCards, setLoadingMoreCards] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -208,18 +194,6 @@ export function SearchDashboard() {
         setError(message);
       });
   }, []);
-
-  useEffect(() => {
-    if (query.trim()) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setPlaceholderIndex((current) => (current + 1) % QUERY_EXAMPLES.length);
-    }, 2400);
-
-    return () => window.clearInterval(interval);
-  }, [query]);
 
   const baseQueryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -340,9 +314,12 @@ export function SearchDashboard() {
       params.set("page", String(page));
       params.set("pageSize", String(tablePageSize));
     }
+    if (selectedCompanyId) {
+      params.set("company", String(selectedCompanyId));
+    }
 
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [baseQueryString, page, pathname, router, tablePageSize, view]);
+  }, [baseQueryString, page, pathname, router, selectedCompanyId, tablePageSize, view]);
 
   useEffect(() => {
     if (activeTab !== "analytics") {
@@ -433,49 +410,6 @@ export function SearchDashboard() {
 
     if (analyticsColorBy === "industries") {
       addOrToggleIndustry(seriesKey);
-    }
-  }
-
-  async function askDatasetQuestion() {
-    const question = chatQuestion.trim();
-    if (!question) {
-      return;
-    }
-
-    setChatLoading(true);
-    setChatError(null);
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question,
-          topK: 8,
-          filters: {
-            tags,
-            industries,
-            batches,
-            years,
-            stages,
-            regions,
-            isHiring,
-            nonprofit,
-            topCompany,
-          },
-        }),
-      });
-      const payload = (await response.json()) as ChatResponse & { error?: string };
-      if (!response.ok || payload.error) {
-        throw new Error(payload.error ?? "Failed to answer question");
-      }
-      setChatResponse(payload);
-    } catch (chatRequestError) {
-      const message = chatRequestError instanceof Error ? chatRequestError.message : "Failed to answer question";
-      setChatError(message);
-    } finally {
-      setChatLoading(false);
     }
   }
 
@@ -612,88 +546,115 @@ export function SearchDashboard() {
   ];
 
   return (
-    <div className="min-h-screen w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+      <DashboardCopilotBridge
+        state={{
+          query,
+          tags,
+          industries,
+          batches,
+          stages,
+          regions,
+          years,
+          isHiring,
+          nonprofit,
+          topCompany,
+          sort,
+          view,
+          activeTab,
+          graphOpen,
+          totalResults: results.total,
+          visibleCompanies: results.results.slice(0, 30).map((row) => ({
+            id: row.id,
+            name: row.name,
+            batch: row.batch,
+            oneLiner: row.one_liner,
+          })),
+          facets: facets
+            ? {
+                tags: facets.tags,
+                industries: facets.industries,
+                batches: facets.batches,
+                stages: facets.stages,
+                regions: facets.regions,
+              }
+            : null,
+        }}
+        setters={{
+          setQuery: (q) => {
+            setPage(1);
+            setQuery(q);
+          },
+          setTags: (v) => {
+            setPage(1);
+            setTags(v);
+          },
+          setIndustries: (v) => {
+            setPage(1);
+            setIndustries(v);
+          },
+          setBatches: (v) => {
+            setPage(1);
+            setBatches(v);
+          },
+          setStages: (v) => {
+            setPage(1);
+            setStages(v);
+          },
+          setRegions: (v) => {
+            setPage(1);
+            setRegions(v);
+          },
+          setYears: (v) => {
+            setPage(1);
+            setYears(v);
+          },
+          setIsHiring: (v) => {
+            setPage(1);
+            setIsHiring(v);
+          },
+          setNonprofit: (v) => {
+            setPage(1);
+            setNonprofit(v);
+          },
+          setTopCompany: (v) => {
+            setPage(1);
+            setTopCompany(v);
+          },
+          setSort: (v) => {
+            setPage(1);
+            setSort(v);
+          },
+          setView,
+          setActiveTab,
+          setGraphOpen,
+          setSelectedCompanyId,
+        }}
+      />
+
+      {selectedCompanyId !== null ? (
+        <CompanyDetailPanel
+          companyId={selectedCompanyId}
+          onClose={() => setSelectedCompanyId(null)}
+        />
+      ) : null}
+      <div className={selectedCompanyId !== null ? "hidden" : "contents"}>
+
       <div className="space-y-6">
-        <header className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-4">
-            <Image
-              src="/logos/yc_search_logo.svg"
-              alt="YC Search logo"
-              width={56}
-              height={56}
-              className="size-14 rounded-2xl border border-border/70 object-cover shadow-sm"
-              priority
-            />
-            <div className="min-w-0">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">YC Search</h1>
-              <p className="text-sm text-muted-foreground">Hybrid keyword + semantic search for YC companies.</p>
-            </div>
+        {activeFilters.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {activeFilters.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={filter.onRemove}
+                className="rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+              >
+                {filter.label} ×
+              </button>
+            ))}
           </div>
-          <ThemeToggle />
-        </header>
-
-        <section className="space-y-4">
-          <div className="rounded-[28px] border border-border/70 bg-card/95 p-4 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(event) => {
-                    setPage(1);
-                    setQuery(event.target.value);
-                  }}
-                  onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setSearchFocused(false)}
-                  placeholder=""
-                  className="h-16 rounded-[22px] border-border/70 bg-background/70 pl-12 pr-4 text-base shadow-none"
-                />
-                {!query ? (
-                  <div
-                    className={cn(
-                      "pointer-events-none absolute inset-y-0 left-12 right-4 flex items-center text-base text-muted-foreground/80 transition-opacity",
-                      searchFocused ? "opacity-100" : "opacity-90",
-                    )}
-                  >
-                    <span className="truncate">
-                      <span className="mr-2 text-muted-foreground/50">Try</span>
-                      {QUERY_EXAMPLES[placeholderIndex]}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-
-              <ControlGroup label="Display" className="lg:w-auto">
-                <SegmentedControl
-                  fullWidth
-                  options={[
-                    { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
-                    { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
-                  ]}
-                  value={view}
-                  onChange={(next) => setView(next as ResultsView)}
-                />
-              </ControlGroup>
-            </div>
-
-          </div>
-
-          {activeFilters.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {activeFilters.map((filter) => (
-                <button
-                  key={filter.key}
-                  type="button"
-                  onClick={filter.onRemove}
-                  className="rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs text-muted-foreground transition hover:text-foreground"
-                >
-                  {filter.label} ×
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-        </section>
+        ) : null}
 
         <SplitLayout
           graphOpen={graphOpen}
@@ -1020,99 +981,10 @@ export function SearchDashboard() {
               )}
             </div>
 
-            <Card className="border-border/70 bg-card/95">
-              <CardHeader className="pb-4">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-2xl border border-primary/20 bg-primary/10 p-2 text-primary">
-                    <Brain className="size-4" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Ask YC Chat</CardTitle>
-                    <CardDescription>
-                      Secondary analysis workspace for questions grounded in your current filters.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-col gap-3 lg:flex-row">
-                  <Input
-                    value={chatQuestion}
-                    onChange={(event) => setChatQuestion(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        void askDatasetQuestion();
-                      }
-                    }}
-                    placeholder="Which companies here look strongest, and which links should I open first?"
-                    className="h-12 flex-1 rounded-2xl"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => void askDatasetQuestion()}
-                    disabled={chatLoading || !chatQuestion.trim()}
-                    className="h-12 rounded-2xl px-5"
-                  >
-                    {chatLoading ? "Thinking..." : "Ask"}
-                  </Button>
-                </div>
-
-                {chatError ? <ErrorBanner message={chatError} /> : null}
-
-                {chatResponse?.answer ? (
-                  <div className="space-y-4 rounded-2xl border border-border/70 bg-background/50 p-4">
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Answer</p>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7">{chatResponse.answer}</p>
-                    </div>
-
-                    {chatResponse.citations.length > 0 ? (
-                      <div className="space-y-3">
-                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Sources</p>
-                        {chatResponse.citations.map((citation) => (
-                          <article
-                            key={`chat-citation-${citation.id}`}
-                            className="rounded-2xl border border-border/70 bg-card/90 p-4"
-                          >
-                            <div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  router.push(`${citation.companyPage}?returnTo=${encodeURIComponent(returnToPath)}`)
-                                }
-                                className="text-left text-sm font-semibold hover:text-primary"
-                              >
-                                {citation.name}
-                              </button>
-                              <p className="mt-1 text-sm text-muted-foreground">{citation.whyRelevant}</p>
-                            </div>
-                            {citation.urls.length > 0 ? (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {citation.urls.map((url) => (
-                                  <a
-                                    key={`${citation.id}-${url}`}
-                                    href={url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
-                                  >
-                                    {url}
-                                  </a>
-                                ))}
-                              </div>
-                            ) : null}
-                          </article>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
           </section>
         )}
         </SplitLayout>
+      </div>
       </div>
     </div>
   );

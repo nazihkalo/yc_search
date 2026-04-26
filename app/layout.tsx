@@ -26,7 +26,7 @@ const display = Instrument_Serif({
 
 export const metadata: Metadata = {
   title: "YC Search",
-  description: "Modern semantic search, analytics, and Crawl4AI context for Y Combinator companies.",
+  description: "Search every YC company in seconds. Find out who's already building in your space across 20 years of Y Combinator batches.",
   icons: {
     icon: "/logos/yc_search_logo.svg",
     apple: "/logos/yc_search_logo.svg",

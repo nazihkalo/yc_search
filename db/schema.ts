@@ -258,4 +258,28 @@ CREATE TABLE IF NOT EXISTS usage_events (
 
 CREATE INDEX IF NOT EXISTS idx_usage_events_user_created ON usage_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_events_endpoint_created ON usage_events(endpoint, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_threads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  title TEXT,
+  ui_snapshot JSONB,
+  messages_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+ALTER TABLE chat_threads ADD COLUMN IF NOT EXISTS messages_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_chat_threads_user_updated ON chat_threads(user_id, updated_at DESC);
+
+DROP TABLE IF EXISTS chat_messages;
+
+CREATE TABLE IF NOT EXISTS anon_chat_calls (
+  ip_hash TEXT PRIMARY KEY,
+  call_count INTEGER NOT NULL DEFAULT 0,
+  window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
