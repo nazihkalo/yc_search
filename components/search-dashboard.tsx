@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   Network,
   Rows3,
+  Search,
   TableProperties,
   X,
 } from "lucide-react";
@@ -138,6 +139,32 @@ export function SearchDashboard() {
 
   const [activeTab, setActiveTab] = useState<DashboardTab>((searchParams.get("tab") as DashboardTab) ?? "results");
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
+
+  // draftQuery drives the search input; query is the debounced/committed value
+  // that triggers API calls. Using a ref to read the latest committed value
+  // inside the debounce without adding it to the effect dependency array.
+  const [draftQuery, setDraftQuery] = useState(query);
+  const queryRef = useRef(query);
+
+  // Keep the input in sync when the AI (or any external setter) changes query.
+  useEffect(() => {
+    queryRef.current = query;
+    setDraftQuery(query);
+  }, [query]);
+
+  // Debounce typed input → commit to query after 350 ms.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (draftQuery !== queryRef.current) {
+        queryRef.current = draftQuery;
+        setPage(1);
+        setQuery(draftQuery);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftQuery]);
+
   const [sort, setSort] = useState<SortOption>((searchParams.get("sort") as SortOption) ?? "relevance");
   const [view, setView] = useState<ResultsView>((searchParams.get("view") as ResultsView) ?? "table");
   const [tags, setTags] = useState<string[]>(parseCsv(searchParams.get("tags")));
@@ -641,6 +668,49 @@ export function SearchDashboard() {
       <div className={selectedCompanyId !== null ? "hidden" : "contents"}>
 
       <div className="space-y-6">
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={draftQuery}
+            onChange={(e) => setDraftQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const v = draftQuery.trim();
+                queryRef.current = v;
+                setPage(1);
+                setQuery(v);
+                setDraftQuery(v);
+              }
+              if (e.key === "Escape") {
+                queryRef.current = "";
+                setPage(1);
+                setQuery("");
+                setDraftQuery("");
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            placeholder="Search companies by name, idea, or description…"
+            className="w-full rounded-full border border-border/70 bg-background/70 py-2.5 pl-10 pr-9 text-sm placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {draftQuery ? (
+            <button
+              type="button"
+              onClick={() => {
+                queryRef.current = "";
+                setPage(1);
+                setQuery("");
+                setDraftQuery("");
+              }}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
+        </div>
+
         {activeFilters.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {activeFilters.map((filter) => (
