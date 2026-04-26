@@ -114,3 +114,16 @@ body {
 a {
   color: inherit;
 }
+
+/* Hide CopilotKit branding (footer + inspector) */
+.poweredBy,
+.poweredByContainer .poweredBy,
+.copilotKitInputContainer.poweredByContainer {
+  padding-bottom: 0 !important;
+}
+.poweredBy {
+  display: none !important;
+}
+copilotkit-inspector {
+  display: none !important;
+}

@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
-import { Button } from "../ui/button";
+import { LandingChatPrompt } from "./chat-prompt";
 
 export function Hero() {
   return (
@@ -21,35 +21,23 @@ export function Hero() {
           Free while in beta
         </span>
 
-        <h1 className="mt-6 max-w-4xl font-[family-name:var(--font-ui-display)] text-5xl leading-[1.02] tracking-tight text-foreground sm:text-7xl">
-          Search every YC company.
-          <span className="block italic text-primary/90">Semantically.</span>
+        <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.04em] text-foreground sm:text-7xl">
+          Has it been done before?
+          <span className="mt-2 block text-3xl font-medium tracking-[-0.03em] text-muted-foreground sm:text-5xl">
+            Search every YC company in seconds.
+          </span>
         </h1>
 
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-          Hybrid keyword and embedding search across every Y Combinator batch, with founder
-          enrichment, 3D similarity graphs, and AI-grounded Q&amp;A over the actual company pages.
+          Researching a startup idea? Find out who&apos;s already building in your space, who tried
+          it and pivoted, and what the YC playbook for your category looks like — across 20 years
+          of batches.
         </p>
 
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="lg" className="h-12 rounded-full px-6 text-base">
-            <Link href="/sign-up">
-              Get started free
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="h-12 rounded-full px-6 text-base"
-          >
-            <Link href="#tour">Watch product tour</Link>
-          </Button>
-        </div>
+        <LandingChatPrompt />
 
-        <p className="mt-4 text-xs text-muted-foreground/80">
-          No credit card. Sign up with Google, GitHub, or email.
+        <p className="mt-6 text-xs text-muted-foreground/80">
+          One free question, no signup. <Link href="/sign-up" className="underline-offset-2 hover:text-foreground hover:underline">Sign up free</Link> to keep asking and drive the table from chat.
         </p>
       </div>
     </section>

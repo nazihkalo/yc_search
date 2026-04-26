@@ -10,39 +10,39 @@ import {
 const FEATURES = [
   {
     icon: Search,
-    title: "Hybrid search",
+    title: "Search by idea, not just keywords",
     body:
-      "Keyword relevance fused with OpenAI embeddings across every YC batch, description, tag, and scraped website.",
+      "Describe what you're thinking about in plain English. We surface every YC company working on something similar.",
   },
   {
     icon: Network,
-    title: "3D similarity graph",
+    title: "See the neighborhood",
     body:
-      "Explore the semantic neighborhood of any company as an interactive force-directed graph.",
+      "Pick a company and explore everyone building near it as an interactive 3D map. Great for spotting clusters and gaps.",
   },
   {
     icon: Bot,
-    title: "Ask-YC chat",
+    title: "Ask questions, get answers",
     body:
-      "Natural-language Q&A grounded in the actual company pages we've crawled — with citations back to source.",
+      "Talk to YC's collective output. Every answer cites the company pages it came from, so you can verify and click through.",
   },
   {
     icon: Github,
-    title: "Founder enrichment",
+    title: "Know the founders",
     body:
-      "Founder bios, LinkedIn/X/GitHub links, top public repos, languages, and web mentions — automatically.",
+      "Bios, links, top GitHub repos, and where they've been mentioned on the web — pulled in automatically.",
   },
   {
     icon: Filter,
-    title: "Faceted filters",
+    title: "Filter by anything",
     body:
-      "Slice by batch, stage, region, industry, hiring, nonprofit, and top-company — combine any facet with search.",
+      "Batch, stage, region, industry, hiring, nonprofit, top company — combine any of them with your search.",
   },
   {
     icon: BarChart3,
-    title: "Batch analytics",
+    title: "Track the batches",
     body:
-      "Founders-per-batch charts with optional category stacking by tag or industry — no spreadsheet required.",
+      "See how many founders, what industries, what's trending. No spreadsheet needed.",
   },
 ];
 
@@ -53,12 +53,12 @@ export function Features() {
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">
           Everything in one place
         </p>
-        <h2 className="mt-3 font-[family-name:var(--font-ui-display)] text-4xl italic tracking-tight text-foreground sm:text-5xl">
-          Built for founders, operators, and researchers.
+        <h2 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
+          Everything you need to research a startup idea.
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">
-          Stop juggling Crunchbase tabs, LinkedIn stalking, and Twitter advanced search.
-          Everything you need to understand who&apos;s in YC — and who they remind you of — in one surface.
+          Stop tab-juggling Crunchbase, LinkedIn, and Twitter. Companies, founders, and signal — in
+          one place.
         </p>
       </div>
 

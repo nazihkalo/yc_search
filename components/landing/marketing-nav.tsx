@@ -9,13 +9,14 @@ export function MarketingNav() {
       <div className="mx-auto flex h-14 w-full max-w-[1280px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 font-[family-name:var(--font-ui-display)] text-xl italic tracking-tight text-foreground transition hover:text-primary"
+          className="inline-flex items-baseline gap-0.5 text-xl font-semibold tracking-[-0.04em] text-foreground transition hover:text-primary"
         >
-          yc search
+          yc<span className="text-primary">·</span>search
         </Link>
         <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
           <a href="#features" className="transition hover:text-foreground">Features</a>
-          <a href="#tour" className="transition hover:text-foreground">Product tour</a>
+          <a href="#preview" className="transition hover:text-foreground">Browse</a>
+          <a href="#tour" className="transition hover:text-foreground">Tour</a>
           <a href="#pricing" className="transition hover:text-foreground">Pricing</a>
         </nav>
         <div className="flex items-center gap-2">

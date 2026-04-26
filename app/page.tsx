@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 
+import { BatchPreview } from "../components/landing/batch-preview";
 import { Features } from "../components/landing/features";
 import { Hero } from "../components/landing/hero";
 import { LandingFooter } from "../components/landing/footer";
@@ -19,6 +20,9 @@ export default function LandingPage() {
         </Suspense>
         <VideoEmbed />
         <Features />
+        <Suspense fallback={null}>
+          <BatchPreview />
+        </Suspense>
         <PricingTeaser />
       </main>
       <LandingFooter />
