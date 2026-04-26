@@ -160,7 +160,7 @@ export function SearchDashboard() {
         setPage(1);
         setQuery(draftQuery);
       }
-    }, 350);
+    }, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftQuery]);
