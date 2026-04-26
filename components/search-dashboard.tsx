@@ -1252,58 +1252,76 @@ function ResultsControlStrip({
   onToggleGraph: () => void;
 }) {
   return (
-    <>
-      <ControlGroup label="Browse">
-        <SegmentedControl
-          compact
-          options={[
-            { value: "results", label: "Results", icon: <Rows3 className="size-3.5" /> },
-            { value: "analytics", label: "Analytics", icon: <BarChart3 className="size-3.5" /> },
-          ]}
-          value={activeTab}
-          onChange={(next) => onActiveTabChange(next as DashboardTab)}
-        />
-      </ControlGroup>
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Browse tabs */}
+      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
+        {(["results", "analytics"] as DashboardTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => onActiveTabChange(tab)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition",
+              activeTab === tab
+                ? "bg-secondary text-secondary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab === "results" ? <Rows3 className="size-3" /> : <BarChart3 className="size-3" />}
+            {tab === "results" ? "Results" : "Analytics"}
+          </button>
+        ))}
+      </div>
 
-      <ControlGroup label="Companion">
-        <Button
-          type="button"
-          variant={graphOpen ? "default" : "outline"}
-          size="sm"
-          onClick={onToggleGraph}
-          className="rounded-full"
-        >
-          <Network className="size-3.5" />
-          {graphOpen ? "Hide graph" : "Show graph"}
-        </Button>
-      </ControlGroup>
+      <div className="flex-1" />
 
-      <ControlGroup label="Sort">
-        <SegmentedControl
-          compact
-          options={[
-            { value: "relevance", label: "Relevance" },
-            { value: "newest", label: "Newest" },
-            { value: "team_size", label: "Team" },
-            { value: "name", label: "Name" },
-          ]}
-          value={sort}
-          onChange={(next) => onSortChange(next as SortOption)}
-        />
-      </ControlGroup>
+      {/* Graph toggle — icon button */}
+      <button
+        type="button"
+        onClick={onToggleGraph}
+        title={graphOpen ? "Hide graph" : "Show graph"}
+        className={cn(
+          "inline-flex size-7 items-center justify-center rounded-full border transition",
+          graphOpen
+            ? "border-primary/40 bg-primary/10 text-primary"
+            : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Network className="size-3.5" />
+      </button>
 
-      <ControlGroup label="Display">
-        <SegmentedControl
-          compact
-          options={[
-            { value: "table", label: "Table", icon: <TableProperties className="size-3.5" /> },
-            { value: "cards", label: "Cards", icon: <LayoutGrid className="size-3.5" /> },
-          ]}
-          value={view}
-          onChange={(next) => onViewChange(next as ResultsView)}
-        />
-      </ControlGroup>
-    </>
+      {/* Sort */}
+      <select
+        value={sort}
+        onChange={(e) => onSortChange(e.target.value as SortOption)}
+        className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      >
+        <option value="relevance">Relevance</option>
+        <option value="newest">Newest</option>
+        <option value="team_size">Team size</option>
+        <option value="name">Name</option>
+      </select>
+
+      {/* View toggle — icon-only */}
+      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
+        {(["table", "cards"] as ResultsView[]).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onViewChange(v)}
+            title={v === "table" ? "Table view" : "Card view"}
+            className={cn(
+              "inline-flex size-6 items-center justify-center rounded-full transition",
+              view === v
+                ? "bg-secondary text-secondary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {v === "table" ? <TableProperties className="size-3" /> : <LayoutGrid className="size-3" />}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Rows3 } from "lucide-react";
 import { CopilotChat } from "@copilotkit/react-ui";
 
+import { cn } from "../../lib/utils";
 import { ChatPersistence } from "./chat-persistence";
 import { PendingQuestionReplay } from "./pending-question-replay";
 import { ChatToolbar } from "./thread-sidebar";
@@ -62,11 +63,15 @@ const CHAT_WIDTH_DEFAULT = 440;
 const CHAT_WIDTH_MIN = 280;
 const CHAT_WIDTH_MAX = 760;
 
+type MobileTab = "chat" | "browse";
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const instructions = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
     return buildInstructions(today);
   }, []);
+
+  const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -88,6 +93,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidth));
   }, [chatWidth]);
+
+  // Used to gate desktop-only behaviours (collapse button, fixed chat width).
+  const [isLg, setIsLg] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)");
+    setIsLg(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsLg(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
 
   const draggingRef = useRef(false);
   const startXRef = useRef(0);
@@ -120,21 +135,45 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     [chatWidth],
   );
 
+  // On mobile, always show full chat regardless of collapsed state.
+  const showCollapsedBar = collapsed && isLg;
+
   return (
-    <div className="flex h-[calc(100vh-3rem)] w-full overflow-hidden">
-      <div className="flex-1 overflow-y-auto">{children}</div>
-      {/* Chat persistence mounts even when collapsed so saves keep working. */}
+    <div className="flex h-[calc(100vh-3rem)] w-full flex-col overflow-hidden lg:flex-row">
+
+      {/* ── Browse pane ─────────────────────────────────────────── */}
+      <div
+        className={cn(
+          "overflow-y-auto lg:flex-1",
+          mobileTab === "browse" ? "flex-1" : "hidden lg:block",
+        )}
+      >
+        {children}
+      </div>
+
+      {/* Chat state always mounted so saves/thread keep working. */}
       <Suspense fallback={null}>
         <ChatPersistence />
       </Suspense>
       <PendingQuestionReplay />
-      {collapsed ? (
-        <aside className="hidden shrink-0 border-l border-border/40 bg-card/30 lg:flex">
+
+      {/* ── Chat pane ───────────────────────────────────────────── */}
+      <aside
+        className={cn(
+          "bg-card/30",
+          // Mobile: fill height when chat tab; hidden when browse tab.
+          mobileTab === "chat" ? "flex flex-1 flex-col" : "hidden",
+          // Desktop: always visible as a side panel in row direction.
+          "lg:flex lg:flex-none lg:shrink-0 lg:flex-row",
+        )}
+      >
+        {showCollapsedBar ? (
+          // Collapsed bar — desktop only (mobile never reaches here).
           <button
             type="button"
             onClick={() => setCollapsed(false)}
             title="Expand chat"
-            className="flex w-10 flex-col items-center gap-2 px-1 py-3 text-xs text-muted-foreground transition hover:text-primary"
+            className="flex w-10 flex-col items-center gap-2 border-l border-border/40 px-1 py-3 text-xs text-muted-foreground transition hover:text-primary"
           >
             <MessageSquare className="size-4" />
             <span
@@ -144,29 +183,62 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               Open chat
             </span>
           </button>
-        </aside>
-      ) : (
-        <aside className="hidden shrink-0 bg-card/30 lg:flex">
-          {/* Drag handle */}
-          <div
-            onMouseDown={onDragStart}
-            className="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-l border-border/40 transition-colors hover:border-primary/60 hover:bg-primary/10 active:bg-primary/20"
-            title="Drag to resize"
+        ) : (
+          <>
+            {/* Drag handle — desktop only */}
+            <div
+              onMouseDown={onDragStart}
+              className="group hidden w-1.5 shrink-0 cursor-col-resize items-center justify-center border-l border-border/40 transition-colors hover:border-primary/60 hover:bg-primary/10 active:bg-primary/20 lg:flex"
+              title="Drag to resize"
+            >
+              <div className="h-8 w-px rounded-full bg-border/60 transition-colors group-hover:bg-primary/50" />
+            </div>
+
+            {/* Chat content */}
+            <div
+              className="flex h-full min-h-0 w-full flex-col border-l border-border/40 lg:border-l-0"
+              style={isLg ? { width: chatWidth } : undefined}
+            >
+              <Suspense fallback={null}>
+                <ChatToolbar onCollapse={isLg ? () => setCollapsed(true) : undefined} />
+              </Suspense>
+              <CopilotChat
+                instructions={instructions}
+                labels={CHAT_LABELS}
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              />
+            </div>
+          </>
+        )}
+      </aside>
+
+      {/* ── Mobile bottom tab bar ───────────────────────────────── */}
+      <nav className="shrink-0 border-t border-border/40 bg-background/95 backdrop-blur lg:hidden">
+        <div className="flex">
+          <button
+            type="button"
+            onClick={() => setMobileTab("browse")}
+            className={cn(
+              "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition",
+              mobileTab === "browse" ? "text-primary" : "text-muted-foreground hover:text-foreground",
+            )}
           >
-            <div className="h-8 w-px rounded-full bg-border/60 transition-colors group-hover:bg-primary/50" />
-          </div>
-          <div className="flex h-full min-h-0 flex-col" style={{ width: chatWidth }}>
-            <Suspense fallback={null}>
-              <ChatToolbar onCollapse={() => setCollapsed(true)} />
-            </Suspense>
-            <CopilotChat
-              instructions={instructions}
-              labels={CHAT_LABELS}
-              className="flex min-h-0 flex-1 flex-col overflow-hidden"
-            />
-          </div>
-        </aside>
-      )}
+            <Rows3 className="size-5" />
+            Browse
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab("chat")}
+            className={cn(
+              "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition",
+              mobileTab === "chat" ? "text-primary" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <MessageSquare className="size-5" />
+            Chat
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }
