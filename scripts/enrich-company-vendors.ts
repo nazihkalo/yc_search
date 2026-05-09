@@ -1209,8 +1209,6 @@ export async function enrichCompanyVendors(options?: { limit?: number }): Promis
     SELECT id, name, website
     FROM companies
     WHERE needs_vendor_enrichment = 1
-      AND website IS NOT NULL
-      AND TRIM(website) != ''
     ORDER BY source_kind ASC, source_rank ASC NULLS LAST, id ASC
     LIMIT @limit
   `, { limit: batchLimit });
