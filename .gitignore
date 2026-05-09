@@ -49,5 +49,6 @@ video/captures/yc-search/.cursorrules
 
 # clerk configuration (can include secrets)
 /.clerk/
-**/*/.DS_Store
+**/.DS_Store
+.DS_Store
 tmp/
