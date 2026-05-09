@@ -1,9 +1,18 @@
 import { pathToFileURL } from "node:url";
+import { lookup } from "node:dns/promises";
 
 import pLimit from "p-limit";
 
 import { closeDb, execute, initializeDatabase, query, queryOne, withTransaction } from "../lib/db";
-import { shouldValidateNetNewVendors, getVendorValidationModel } from "../lib/env";
+import {
+  getVendorBrowserFallbackLimit,
+  getVendorDiscoveryUrlLimit,
+  getVendorDnsTimeoutMs,
+  getVendorEnrichmentConcurrency,
+  getVendorPreflightTimeoutMs,
+  getVendorValidationModel,
+  shouldValidateNetNewVendors,
+} from "../lib/env";
 import { exaSearch } from "../lib/exa";
 import { renderWebsiteMarkdown } from "../lib/browser-render";
 import { scrapeWebsiteMarkdown } from "../lib/crawl4ai";
@@ -36,6 +45,35 @@ type CrawlError = {
   url: string;
   sourceType: string;
   error: string;
+  retryWithBrowser?: boolean;
+};
+
+type UrlCheckStatus =
+  | "invalid_url"
+  | "dns_failed"
+  | "timeout"
+  | "network_error"
+  | "http_error"
+  | "parked"
+  | "reachable"
+  | "content"
+  | "thin_content"
+  | "error"
+  | "skipped";
+
+type UrlCheck = {
+  url: string;
+  phase: string;
+  status: UrlCheckStatus;
+  httpStatus?: number | null;
+  finalUrl?: string | null;
+  contentType?: string | null;
+  responseMs?: number | null;
+  error?: string | null;
+};
+
+type PreflightResult = UrlCheck & {
+  shouldCrawl: boolean;
 };
 
 type ExistingVendor = {
@@ -60,16 +98,22 @@ export type VendorEnrichmentSummary = {
 const TRUST_PATHS = [
   "/subprocessors",
   "/legal/subprocessors",
-  "/security",
-  "/trust",
   "/sub-processors",
   "/legal/sub-processors",
-  "/privacy",
-  "/legal/privacy",
+  "/security",
+  "/trust",
   "/dpa",
   "/legal/dpa",
   "/data-processing-addendum",
+  "/privacy",
+  "/legal/privacy",
 ];
+
+const USER_AGENT = "yc-search-vendor-intelligence/1.0 (+https://github.com/nazihkalo/yc_search)";
+
+const PARKED_DOMAIN_PATTERN = /(buy this domain|domain is for sale|this domain may be for sale|sedo|afternic|hugedomains|parkingcrew|bodis|dan\.com|godaddy\.com\/forsale|namecheap parking|related searches)/i;
+
+const dnsCache = new Map<string, Promise<boolean>>();
 
 function parseLimitArg(defaultLimit = 50): number {
   const argument = process.argv.find((value) => value.startsWith("--limit="));
@@ -95,14 +139,19 @@ function buildDiscoveryUrls(website: string) {
   if (!url) return [];
 
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
-  const origin = `${url.protocol}//${host}`;
+  const originalHost = url.hostname.toLowerCase();
+  const origins = new Set([`${url.protocol}//${originalHost}`, `${url.protocol}//${host}`]);
   const trustOrigin = `https://trust.${host}`;
+  const trustCenterOrigin = `https://trustcenter.${host}`;
   const urls = new Set<string>();
-  urls.add(trustOrigin);
   urls.add(`${trustOrigin}/subprocessors`);
-  urls.add(`${trustOrigin}/security`);
-  for (const path of TRUST_PATHS) {
-    urls.add(`${origin}${path}`);
+  urls.add(trustOrigin);
+  urls.add(`${trustCenterOrigin}/subprocessors`);
+  urls.add(trustCenterOrigin);
+  for (const origin of origins) {
+    for (const path of TRUST_PATHS) {
+      urls.add(`${origin}${path}`);
+    }
   }
   return [...urls];
 }
@@ -123,6 +172,188 @@ function shouldUseBrowserFallback(markdown: string) {
   return trimmed.length < 2_000 &&
     /(enable javascript|checking your browser|please wait|vanta|trust center)/i.test(trimmed) &&
     !/(subprocessor|service provider|data processing|privacy|security)/i.test(trimmed);
+}
+
+function shouldTryBrowserFallback(url: string) {
+  const lower = url.toLowerCase();
+  if (/(privacy|cookie|terms)/.test(lower) && !/(subprocessor|sub-processor|dpa|data-processing)/.test(lower)) {
+    return false;
+  }
+  return /(trust|security|subprocessor|sub-processor|vendor|legal|dpa|data-processing)/.test(lower);
+}
+
+function isParkedPage(text: string) {
+  return PARKED_DOMAIN_PATTERN.test(text.slice(0, 24_000));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isTimeoutError(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  return error instanceof DOMException && error.name === "TimeoutError" ||
+    message.includes("timeout") ||
+    message.includes("aborted");
+}
+
+async function hostnameResolves(hostname: string) {
+  const cached = dnsCache.get(hostname);
+  if (cached) return cached;
+
+  const promise = withTimeout(
+    lookup(hostname).then(() => true),
+    getVendorDnsTimeoutMs(),
+    "DNS lookup timed out",
+  ).catch(() => false);
+  dnsCache.set(hostname, promise);
+  return promise;
+}
+
+async function upsertUrlCheck(companyId: number, check: UrlCheck) {
+  await execute(`
+    INSERT INTO vendor_url_checks (
+      company_id,
+      url,
+      phase,
+      status,
+      http_status,
+      final_url,
+      content_type,
+      response_ms,
+      error,
+      checked_at,
+      updated_at
+    ) VALUES (
+      @company_id,
+      @url,
+      @phase,
+      @status,
+      @http_status,
+      @final_url,
+      @content_type,
+      @response_ms,
+      @error,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT(company_id, url, phase) DO UPDATE SET
+      status = EXCLUDED.status,
+      http_status = EXCLUDED.http_status,
+      final_url = EXCLUDED.final_url,
+      content_type = EXCLUDED.content_type,
+      response_ms = EXCLUDED.response_ms,
+      error = EXCLUDED.error,
+      checked_at = NOW(),
+      updated_at = NOW()
+  `, {
+    company_id: companyId,
+    url: check.url,
+    phase: check.phase,
+    status: check.status,
+    http_status: check.httpStatus ?? null,
+    final_url: check.finalUrl ?? null,
+    content_type: check.contentType ?? null,
+    response_ms: check.responseMs ?? null,
+    error: check.error ?? null,
+  });
+}
+
+async function preflightUrl(companyId: number, rawUrl: string, phase = "preflight_discovery"): Promise<PreflightResult> {
+  const started = Date.now();
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    const result: PreflightResult = {
+      url: rawUrl,
+      phase,
+      status: "invalid_url",
+      responseMs: Date.now() - started,
+      error: "Invalid URL",
+      shouldCrawl: false,
+    };
+    await upsertUrlCheck(companyId, result);
+    return result;
+  }
+
+  const resolved = await hostnameResolves(url.hostname);
+  if (!resolved) {
+    const result: PreflightResult = {
+      url: rawUrl,
+      phase,
+      status: "dns_failed",
+      responseMs: Date.now() - started,
+      error: "Hostname did not resolve",
+      shouldCrawl: false,
+    };
+    await upsertUrlCheck(companyId, result);
+    return result;
+  }
+
+  try {
+    const timeoutMs = getVendorPreflightTimeoutMs();
+    const response = await fetch(rawUrl, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        Range: "bytes=0-24575",
+      },
+    });
+    const contentType = response.headers.get("content-type");
+    const body = contentType?.includes("text/html") || contentType?.includes("text/plain")
+      ? await response.text()
+      : "";
+    const parked = body ? isParkedPage(body) : false;
+    const status: UrlCheckStatus = parked
+      ? "parked"
+      : response.status >= 400
+        ? "http_error"
+        : "reachable";
+    const result: PreflightResult = {
+      url: rawUrl,
+      phase,
+      status,
+      httpStatus: response.status,
+      finalUrl: response.url,
+      contentType,
+      responseMs: Date.now() - started,
+      error: status === "http_error" ? `HTTP ${response.status}` : null,
+      shouldCrawl: status === "reachable",
+    };
+    await upsertUrlCheck(companyId, result);
+    return result;
+  } catch (error) {
+    const result: PreflightResult = {
+      url: rawUrl,
+      phase,
+      status: isTimeoutError(error) ? "timeout" : "network_error",
+      responseMs: Date.now() - started,
+      error: errorMessage(error),
+      shouldCrawl: false,
+    };
+    await upsertUrlCheck(companyId, result);
+    return result;
+  }
 }
 
 async function upsertVendorSnapshot(companyId: number, result: CrawlResult | CrawlError) {
@@ -164,35 +395,77 @@ async function upsertVendorSnapshot(companyId: number, result: CrawlResult | Cra
   });
 }
 
-async function crawlForVendors(companyId: number, url: string, sourceType = "crawl4ai_trust"): Promise<CrawlResult | CrawlError> {
-  let crawlError: string | null = null;
+async function crawlWithCrawl4Ai(companyId: number, url: string, sourceType = "crawl4ai_trust"): Promise<CrawlResult | CrawlError> {
+  const started = Date.now();
   try {
     const markdown = await scrapeWebsiteMarkdown(url);
-    if (!shouldUseBrowserFallback(markdown)) {
-      const result = { url, sourceType, markdown };
-      await upsertVendorSnapshot(companyId, result);
-      return result;
-    }
-    crawlError = `Crawl4AI returned thin content (${markdown.trim().length} chars)`;
-  } catch (error) {
-    crawlError = error instanceof Error ? error.message : String(error);
-  }
-
-  try {
-    const markdown = await renderWebsiteMarkdown(url);
-    const result = { url, sourceType: `${sourceType}_browser`, markdown };
+    const result = { url, sourceType, markdown };
     await upsertVendorSnapshot(companyId, result);
-    return result;
-  } catch (browserError) {
+    const thinContent = shouldUseBrowserFallback(markdown);
+    await upsertUrlCheck(companyId, {
+      url,
+      phase: sourceType,
+      status: thinContent ? "thin_content" : "content",
+      responseMs: Date.now() - started,
+      error: thinContent ? `Crawl4AI returned thin content (${markdown.trim().length} chars)` : null,
+    });
+    return thinContent
+      ? {
+          url,
+          sourceType,
+          error: `Crawl4AI returned thin content (${markdown.trim().length} chars)`,
+          retryWithBrowser: true,
+        }
+      : result;
+  } catch (error) {
+    const message = errorMessage(error);
     const result = {
       url,
       sourceType,
-      error: [
-        crawlError,
-        browserError instanceof Error ? browserError.message : String(browserError),
-      ].join("\n"),
+      error: message,
+      retryWithBrowser: true,
     };
     await upsertVendorSnapshot(companyId, result);
+    await upsertUrlCheck(companyId, {
+      url,
+      phase: sourceType,
+      status: "error",
+      responseMs: Date.now() - started,
+      error: message,
+    });
+    return result;
+  }
+}
+
+async function crawlWithBrowser(companyId: number, url: string, sourceType = "crawl4ai_trust_browser"): Promise<CrawlResult | CrawlError> {
+  const started = Date.now();
+  try {
+    const markdown = await renderWebsiteMarkdown(url);
+    const result = { url, sourceType, markdown };
+    await upsertVendorSnapshot(companyId, result);
+    await upsertUrlCheck(companyId, {
+      url,
+      phase: sourceType,
+      status: markdown.trim() ? "content" : "thin_content",
+      responseMs: Date.now() - started,
+      error: markdown.trim() ? null : "Browser render returned empty content",
+    });
+    return result;
+  } catch (browserError) {
+    const message = errorMessage(browserError);
+    const result = {
+      url,
+      sourceType,
+      error: message,
+    };
+    await upsertVendorSnapshot(companyId, result);
+    await upsertUrlCheck(companyId, {
+      url,
+      phase: sourceType,
+      status: "error",
+      responseMs: Date.now() - started,
+      error: message,
+    });
     return result;
   }
 }
@@ -224,6 +497,12 @@ async function searchVendorPages(company: VendorCandidate) {
           markdown: item.text,
         };
         await upsertVendorSnapshot(company.id, result);
+        await upsertUrlCheck(company.id, {
+          url: item.url,
+          phase: "exa_search",
+          status: "content",
+          finalUrl: item.url,
+        });
         results.push(result);
       }
     } catch {
@@ -661,6 +940,10 @@ function hasStrongSubprocessorEvidence(mentions: VendorMention[]) {
   return subprocessorCount >= 3;
 }
 
+function isVendorSpecificUrl(url: string) {
+  return /(subprocessor|sub-processor|vendor|service-provider)/i.test(url);
+}
+
 async function vendorRelationshipKeys(companyId: number) {
   const rows = await query<{
     normalized_name: string;
@@ -699,23 +982,116 @@ async function enrichOneCompany(company: VendorCandidate) {
     return { ok: true, relationshipsUpserted: 0 };
   }
 
-  const discoveryUrls = buildDiscoveryUrls(website);
+  const allDiscoveryUrls = buildDiscoveryUrls(website);
+  const discoveryUrlLimit = getVendorDiscoveryUrlLimit();
+  const discoveryUrls = allDiscoveryUrls.slice(0, discoveryUrlLimit);
   const crawled: CrawlResult[] = [];
   const errors: CrawlError[] = [];
   const mentions: VendorMention[] = [];
+  const browserQueue: Array<{ url: string; sourceType: string }> = [];
+  const seenBrowserUrls = new Set<string>();
+  let browserFallbacksUsed = 0;
 
-  for (const url of discoveryUrls.slice(0, 7)) {
-    const result = await crawlForVendors(company.id, url);
+  for (const url of allDiscoveryUrls.slice(discoveryUrlLimit)) {
+    await upsertUrlCheck(company.id, {
+      url,
+      phase: "preflight_discovery",
+      status: "skipped",
+      error: `Discovery URL limit ${discoveryUrlLimit} reached`,
+    });
+  }
+
+  const addCrawlResult = (result: CrawlResult) => {
+    crawled.push(result);
+    mentions.push(...extractVendorMentionsFromMarkdown(result.markdown, result.url, result.sourceType));
+  };
+
+  const crawlPrimary = async (url: string, sourceType: string) => {
+    const result = await crawlWithCrawl4Ai(company.id, url, sourceType);
     if ("markdown" in result && result.markdown.trim()) {
-      crawled.push(result);
-      mentions.push(...extractVendorMentionsFromMarkdown(result.markdown, result.url, result.sourceType));
-      if (/(subprocessor|sub-processor|vendor)/i.test(result.url) && hasStrongSubprocessorEvidence(mentions)) {
-        break;
+      addCrawlResult(result);
+      return;
+    }
+
+    const crawlError = result as CrawlError;
+    errors.push(crawlError);
+    if (crawlError.retryWithBrowser && shouldTryBrowserFallback(url)) {
+      browserQueue.push({ url, sourceType: `${sourceType}_browser` });
+    }
+  };
+
+  const runBrowserFallbacks = async () => {
+    while (browserQueue.length > 0) {
+      const target = browserQueue.shift();
+      if (!target) break;
+      if (seenBrowserUrls.has(target.url)) continue;
+      seenBrowserUrls.add(target.url);
+
+      if (hasStrongSubprocessorEvidence(mentions) && !isVendorSpecificUrl(target.url)) {
+        await upsertUrlCheck(company.id, {
+          url: target.url,
+          phase: target.sourceType,
+          status: "skipped",
+          error: "Strong subprocessor evidence already found",
+        });
+        continue;
       }
-    } else {
-      errors.push(result as CrawlError);
+
+      if (browserFallbacksUsed >= getVendorBrowserFallbackLimit()) {
+        await upsertUrlCheck(company.id, {
+          url: target.url,
+          phase: target.sourceType,
+          status: "skipped",
+          error: `Browser fallback limit ${getVendorBrowserFallbackLimit()} reached`,
+        });
+        continue;
+      }
+
+      browserFallbacksUsed += 1;
+      const result = await crawlWithBrowser(company.id, target.url, target.sourceType);
+      if ("markdown" in result && result.markdown.trim()) {
+        addCrawlResult(result);
+      } else {
+        errors.push(result as CrawlError);
+      }
+    }
+  };
+
+  const preflightLimit = pLimit(6);
+  const discoveryChecks = await Promise.all(
+    discoveryUrls.map((url) => preflightLimit(() => preflightUrl(company.id, url, "preflight_discovery"))),
+  );
+  const discoveryCrawlTargets = discoveryChecks.filter((check) => check.shouldCrawl).map((check) => check.url);
+
+  for (const check of discoveryChecks) {
+    if (!check.shouldCrawl) {
+      errors.push({
+        url: check.url,
+        sourceType: check.phase,
+        error: check.error ?? check.status,
+      });
     }
   }
+
+  let stopDiscoveryCrawl = false;
+  for (const url of discoveryCrawlTargets) {
+    if (stopDiscoveryCrawl) {
+      await upsertUrlCheck(company.id, {
+        url,
+        phase: "crawl4ai_trust",
+        status: "skipped",
+        error: "Strong subprocessor evidence already found",
+      });
+      continue;
+    }
+
+    await crawlPrimary(url, "crawl4ai_trust");
+    if (isVendorSpecificUrl(url) && hasStrongSubprocessorEvidence(mentions)) {
+      stopDiscoveryCrawl = true;
+    }
+  }
+
+  await runBrowserFallbacks();
 
   const linkedUrls = new Set<string>();
   for (const item of crawled) {
@@ -725,20 +1101,56 @@ async function enrichOneCompany(company: VendorCandidate) {
   }
 
   const strongSubprocessorEvidence = hasStrongSubprocessorEvidence(mentions);
-  const linksToCrawl = [...linkedUrls]
+  const crawledOrErroredUrls = new Set([
+    ...crawled.map((item) => item.url),
+    ...errors.map((item) => item.url),
+  ]);
+  const linkedUrlCandidates = [...linkedUrls]
     .filter((url) => !strongSubprocessorEvidence || /(subprocessor|sub-processor|vendor)/i.test(url))
-    .slice(0, 5);
+    .filter((url) => !crawledOrErroredUrls.has(url));
+  const linksToCrawl = linkedUrlCandidates.slice(0, 5);
 
-  for (const url of linksToCrawl) {
-    if (crawled.some((item) => item.url === url) || errors.some((item) => item.url === url)) continue;
-    const result = await crawlForVendors(company.id, url, "crawl4ai_discovered_link");
-    if ("markdown" in result && result.markdown.trim()) {
-      crawled.push(result);
-      mentions.push(...extractVendorMentionsFromMarkdown(result.markdown, result.url, result.sourceType));
-    } else {
-      errors.push(result as CrawlError);
+  for (const url of linkedUrlCandidates.slice(5)) {
+    await upsertUrlCheck(company.id, {
+      url,
+      phase: "preflight_discovered_link",
+      status: "skipped",
+      error: "Discovered link limit 5 reached",
+    });
+  }
+
+  const linkedChecks = await Promise.all(
+    linksToCrawl.map((url) => preflightLimit(() => preflightUrl(company.id, url, "preflight_discovered_link"))),
+  );
+
+  let stopDiscoveredLinkCrawl = false;
+  for (const check of linkedChecks) {
+    if (!check.shouldCrawl) {
+      errors.push({
+        url: check.url,
+        sourceType: check.phase,
+        error: check.error ?? check.status,
+      });
+      continue;
+    }
+
+    if (stopDiscoveredLinkCrawl) {
+      await upsertUrlCheck(company.id, {
+        url: check.url,
+        phase: "crawl4ai_discovered_link",
+        status: "skipped",
+        error: "Strong subprocessor evidence already found",
+      });
+      continue;
+    }
+
+    await crawlPrimary(check.url, "crawl4ai_discovered_link");
+    if (isVendorSpecificUrl(check.url) && hasStrongSubprocessorEvidence(mentions)) {
+      stopDiscoveredLinkCrawl = true;
     }
   }
+
+  await runBrowserFallbacks();
 
   if (mentions.length === 0) {
     const searchResults = await searchVendorPages(company);
@@ -813,7 +1225,7 @@ export async function enrichCompanyVendors(options?: { limit?: number }): Promis
     };
   }
 
-  const limit = pLimit(3);
+  const limit = pLimit(getVendorEnrichmentConcurrency());
   let successCount = 0;
   let failureCount = 0;
   let relationshipsUpserted = 0;

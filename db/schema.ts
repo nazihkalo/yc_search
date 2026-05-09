@@ -186,6 +186,23 @@ CREATE TABLE IF NOT EXISTS vendor_snapshots (
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS vendor_url_checks (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  status TEXT NOT NULL,
+  http_status INTEGER,
+  final_url TEXT,
+  content_type TEXT,
+  response_ms INTEGER,
+  error TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, url, phase),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS vendors (
   id BIGSERIAL PRIMARY KEY,
   canonical_name TEXT NOT NULL,
@@ -347,6 +364,9 @@ CREATE INDEX IF NOT EXISTS idx_sync_runs_status ON sync_runs(status);
 CREATE INDEX IF NOT EXISTS idx_vendor_trust_profiles_checked ON vendor_trust_profiles(last_checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vendor_snapshots_company_id ON vendor_snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_vendor_snapshots_content_hash ON vendor_snapshots(content_hash);
+CREATE INDEX IF NOT EXISTS idx_vendor_url_checks_company_id ON vendor_url_checks(company_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_url_checks_phase_status ON vendor_url_checks(phase, status);
+CREATE INDEX IF NOT EXISTS idx_vendor_url_checks_checked_at ON vendor_url_checks(checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vendors_category ON vendors(category);
 CREATE INDEX IF NOT EXISTS idx_company_vendors_company_id ON company_vendors(company_id);
 CREATE INDEX IF NOT EXISTS idx_company_vendors_vendor_id ON company_vendors(vendor_id);
