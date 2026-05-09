@@ -29,6 +29,7 @@ export function parseSearchParams(searchParams: URLSearchParams): SearchParams {
       .filter((year) => Number.isFinite(year)),
     stages: parseCsv(searchParams.get("stages")),
     regions: parseCsv(searchParams.get("regions")),
+    sources: parseCsv(searchParams.get("sources")),
     isHiring: searchParams.get("isHiring") === "1",
     nonprofit: searchParams.get("nonprofit") === "1",
     topCompany: searchParams.get("topCompany") === "1",

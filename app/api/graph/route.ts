@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const kRaw = Number(searchParams.get("k"));
     const kNearest = Number.isFinite(kRaw) && kRaw > 0 ? Math.min(kRaw, 24) : undefined;
 
-    if (Number.isFinite(focusRaw) && focusRaw > 0) {
+    if (Number.isFinite(focusRaw) && focusRaw !== 0) {
       const maxNodes = Number.isFinite(maxNodesRaw) && maxNodesRaw > 0 ? Math.min(maxNodesRaw, 200) : 40;
       const data = await getFocusGraphData(focusRaw, {
         maxNodes,

@@ -98,6 +98,15 @@ export function getOpenAiApiKey() {
   return value;
 }
 
+export function shouldValidateNetNewVendors() {
+  return process.env.VENDOR_LLM_VALIDATION !== "0";
+}
+
+export function getVendorValidationModel() {
+  const value = process.env.VENDOR_VALIDATION_MODEL?.trim();
+  return value && value.length > 0 ? value : "gpt-4o-mini";
+}
+
 export function getAppSalt() {
   const value = process.env.APP_SALT?.trim();
   if (value && value.length >= 8) return value;

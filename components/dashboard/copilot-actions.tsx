@@ -19,7 +19,7 @@ import { Badge } from "../ui/badge";
 
 type SortOption = "relevance" | "newest" | "team_size" | "name";
 type ResultsView = "cards" | "table";
-type DashboardTab = "results" | "analytics";
+type DashboardTab = "results" | "analytics" | "vendors";
 
 export type VisibleCompany = {
   id: number;
@@ -34,6 +34,7 @@ export type FacetCounts = {
   batches?: Array<{ value: string; count: number }>;
   stages?: Array<{ value: string; count: number }>;
   regions?: Array<{ value: string; count: number }>;
+  sources?: Array<{ value: string; count: number }>;
 };
 
 export type DashboardBridgeState = {
@@ -43,6 +44,7 @@ export type DashboardBridgeState = {
   batches: string[];
   stages: string[];
   regions: string[];
+  sources: string[];
   years: number[];
   isHiring: boolean;
   nonprofit: boolean;
@@ -63,6 +65,7 @@ export type DashboardBridgeSetters = {
   setBatches: (v: string[]) => void;
   setStages: (v: string[]) => void;
   setRegions: (v: string[]) => void;
+  setSources: (v: string[]) => void;
   setYears: (v: number[]) => void;
   setIsHiring: (v: boolean) => void;
   setNonprofit: (v: boolean) => void;
@@ -149,6 +152,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
         batches: state.batches,
         stages: state.stages,
         regions: state.regions,
+        sources: state.sources,
         years: state.years,
         isHiring: state.isHiring,
         nonprofit: state.nonprofit,
@@ -225,6 +229,12 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           required: false,
         },
         {
+          name: "sources",
+          type: "string[]",
+          description: "Source filters. Valid values: 'yc' and 'forbes_ai50'.",
+          required: false,
+        },
+        {
           name: "years",
           type: "number[]",
           description: "Launch-year filters.",
@@ -271,6 +281,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
             batches,
             stages,
             regions,
+            sources,
             years,
             isHiring,
             nonprofit,
@@ -284,6 +295,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
             batches?: string[];
             stages?: string[];
             regions?: string[];
+            sources?: string[];
             years?: number[];
             isHiring?: boolean;
             nonprofit?: boolean;
@@ -315,6 +327,9 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           if (regions !== undefined) {
             set.setRegions(replace ? regions : Array.from(new Set([...s.regions, ...regions])));
           } else if (replace) set.setRegions([]);
+          if (sources !== undefined) {
+            set.setSources(replace ? sources : Array.from(new Set([...s.sources, ...sources])));
+          } else if (replace) set.setSources([]);
           if (years !== undefined) {
             set.setYears(replace ? years : Array.from(new Set([...s.years, ...years])));
           } else if (replace) set.setYears([]);
@@ -344,6 +359,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           "batches",
           "stages",
           "regions",
+          "sources",
           "years",
         ];
         for (const key of filterFields) {
@@ -402,6 +418,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           set.setBatches([]);
           set.setStages([]);
           set.setRegions([]);
+          set.setSources([]);
           set.setYears([]);
           set.setIsHiring(false);
           set.setNonprofit(false);
@@ -431,12 +448,13 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       description:
         "Change the left-pane view. 'table' / 'cards' show results in different layouts. " +
         "'analytics' switches to the batch-analytics chart. " +
+        "'vendors' switches to vendor/subprocessor analytics. " +
         "'graph' opens the 3D force graph — use this for any visual/spatial/relational request.",
       parameters: [
         {
           name: "view",
           type: "string",
-          description: "'table' | 'cards' | 'analytics' | 'graph'",
+          description: "'table' | 'cards' | 'analytics' | 'vendors' | 'graph'",
           required: true,
         },
       ],
@@ -452,6 +470,10 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           if (view === "analytics") {
             set.setActiveTab("analytics");
             return "Switched to analytics.";
+          }
+          if (view === "vendors") {
+            set.setActiveTab("vendors");
+            return "Switched to vendor analytics.";
           }
           if (view === "graph") {
             set.setActiveTab("results");
@@ -566,10 +588,16 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           description: "Optional region filters.",
           required: false,
         },
+        {
+          name: "sources",
+          type: "string[]",
+          description: "Optional source filters: 'yc' or 'forbes_ai50'.",
+          required: false,
+        },
       ],
       handler: async (args) => {
         try {
-          const { query, topK, tags, industries, batches, stages, regions } = args as {
+          const { query, topK, tags, industries, batches, stages, regions, sources } = args as {
             query: string;
             topK?: number;
             tags?: string[];
@@ -577,6 +605,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
             batches?: string[];
             stages?: string[];
             regions?: string[];
+            sources?: string[];
           };
           const res = await fetch("/api/chat-tools/ask-knowledge-base", {
             method: "POST",
@@ -584,7 +613,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
             body: JSON.stringify({
               query,
               topK,
-              filters: { tags, industries, batches, stages, regions },
+              filters: { tags, industries, batches, stages, regions, sources },
             }),
           });
           if (!res.ok) {
@@ -921,6 +950,7 @@ function pickFacetSnapshot(facets: FacetCounts | null) {
     batches: topValues(facets.batches, 40),
     stages: topValues(facets.stages, 20),
     regions: topValues(facets.regions, 30),
+    sources: topValues(facets.sources, 10),
   };
 }
 
@@ -931,6 +961,7 @@ function buildFacetInstructions(facets: FacetCounts | null): string {
   const batches = topValues(facets.batches, 30);
   const stages = topValues(facets.stages, 15);
   const regions = topValues(facets.regions, 20);
+  const sources = topValues(facets.sources, 10);
 
   if (tags.length === 0 && industries.length === 0 && batches.length === 0) {
     return "";
@@ -943,6 +974,7 @@ function buildFacetInstructions(facets: FacetCounts | null): string {
     batches.length ? `- batches: ${batches.join(", ")}` : "",
     stages.length ? `- stages: ${stages.join(", ")}` : "",
     regions.length ? `- regions: ${regions.join(", ")}` : "",
+    sources.length ? `- sources: ${sources.join(", ")}` : "",
     "",
     "Rules:",
     "- Only use a facet value if it's an EXACT match (case-sensitive) for what the user means.",

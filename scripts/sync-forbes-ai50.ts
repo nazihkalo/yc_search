@@ -1,16 +1,19 @@
 import { pathToFileURL } from "node:url";
 
-import { buildCompanySearchText } from "../lib/company-normalize";
+import {
+  FORBES_AI50_2026_COMPANIES,
+  FORBES_AI50_2026_SOURCE,
+  type ForbesAi50CompanySeed,
+} from "../lib/seeds/forbes-ai50-2026";
 import { closeDb, execute, initializeDatabase, query, withTransaction } from "../lib/db";
 import { sha256 } from "../lib/hash";
-import { fetchYcCompanies } from "../lib/yc-api";
 
 type ExistingCompanyRow = {
   id: number;
   company_hash: string;
 };
 
-export type SyncYcSummary = {
+export type SyncForbesAi50Summary = {
   total: number;
   inserted: number;
   updated: number;
@@ -21,60 +24,96 @@ function hasValue(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-export async function syncYcCompanies(): Promise<SyncYcSummary> {
-  await initializeDatabase();
-  const companies = await fetchYcCompanies();
-  const existingRows = await query<ExistingCompanyRow>("SELECT id, company_hash FROM companies");
-  const existingHashById = new Map(
-    existingRows.map((row: ExistingCompanyRow) => [row.id, row.company_hash]),
-  );
+export function forbesAi50CompanyId(slug: string) {
+  const hashPrefix = sha256(`${FORBES_AI50_2026_SOURCE.kind}:${FORBES_AI50_2026_SOURCE.year}:${slug}`).slice(0, 8);
+  const bucket = Number.parseInt(hashPrefix, 16) % 1_500_000_000;
+  return -(500_000_000 + bucket);
+}
 
+function foundedYearToTimestamp(year: number) {
+  return Math.floor(Date.UTC(year, 0, 1) / 1000);
+}
+
+function buildForbesSearchText(company: ForbesAi50CompanySeed) {
+  return [
+    company.name,
+    company.oneLiner,
+    company.category,
+    company.city,
+    company.country,
+    company.funding,
+    company.foundedYear,
+    FORBES_AI50_2026_SOURCE.listName,
+    String(FORBES_AI50_2026_SOURCE.year),
+    ...company.tags,
+  ]
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildLongDescription(company: ForbesAi50CompanySeed) {
+  return [
+    company.oneLiner,
+    `Founded in ${company.foundedYear} in ${company.city}, ${company.country}.`,
+    `Forbes listed funding: ${company.funding}.`,
+  ].join(" ");
+}
+
+export async function syncForbesAi50Companies(): Promise<SyncForbesAi50Summary> {
+  await initializeDatabase();
+
+  const existingRows = await query<ExistingCompanyRow>(`
+    SELECT id, company_hash
+    FROM companies
+    WHERE source_kind = @source_kind
+  `, { source_kind: FORBES_AI50_2026_SOURCE.kind });
+  const existingHashById = new Map(existingRows.map((row) => [row.id, row.company_hash]));
+
+  const seenIds = new Set<number>();
   let inserted = 0;
   let updated = 0;
   let unchanged = 0;
 
   await withTransaction(async (client) => {
-    for (const company of companies) {
+    for (const [index, company] of FORBES_AI50_2026_COMPANIES.entries()) {
+      const id = forbesAi50CompanyId(company.slug);
+      if (seenIds.has(id)) {
+        throw new Error(`Duplicate Forbes AI 50 deterministic id for ${company.slug}: ${id}`);
+      }
+      seenIds.add(id);
+
+      const allLocations = `${company.city}, ${company.country}`;
+      const industries = ["Artificial Intelligence", company.category];
+      const tags = ["Forbes AI 50", `Forbes AI 50 ${FORBES_AI50_2026_SOURCE.year}`, ...company.tags];
+      const sourceRank = index + 1;
       const companyHashPayload = {
         name: company.name,
         slug: company.slug,
-        former_names: company.former_names,
-        small_logo_thumb_url: company.small_logo_thumb_url ?? null,
-        website: company.website ?? null,
-        all_locations: company.all_locations ?? null,
-        long_description: company.long_description ?? null,
-        one_liner: company.one_liner ?? null,
-        team_size: company.team_size ?? null,
-        highlight_black: company.highlight_black,
-        highlight_latinx: company.highlight_latinx,
-        highlight_women: company.highlight_women,
-        industry: company.industry ?? null,
-        subindustry: company.subindustry ?? null,
-        launched_at: company.launched_at ?? null,
-        tags: company.tags,
-        top_company: company.top_company,
-        isHiring: company.isHiring,
-        nonprofit: company.nonprofit,
-        batch: company.batch ?? null,
-        status: company.status ?? null,
-        industries: company.industries,
-        regions: company.regions,
-        stage: company.stage ?? null,
-        app_video_public: company.app_video_public,
-        demo_day_video_public: company.demo_day_video_public,
-        question_answers: company.question_answers,
-        url: company.url ?? null,
-        api: company.api ?? null,
+        website: company.website,
+        all_locations: allLocations,
+        long_description: buildLongDescription(company),
+        one_liner: company.oneLiner,
+        industry: company.category,
+        subindustry: company.oneLiner,
+        launched_at: foundedYearToTimestamp(company.foundedYear),
+        tags,
+        industries,
+        regions: [company.country],
+        source_kind: FORBES_AI50_2026_SOURCE.kind,
+        source_url: FORBES_AI50_2026_SOURCE.url,
+        source_rank: sourceRank,
+        source_year: FORBES_AI50_2026_SOURCE.year,
+        source_list_name: FORBES_AI50_2026_SOURCE.listName,
+        founded_year: company.foundedYear,
+        funding: company.funding,
       };
       const companyHash = sha256(JSON.stringify(companyHashPayload));
-
-      const existingHash = existingHashById.get(company.id);
+      const existingHash = existingHashById.get(id);
       const isNew = !existingHash;
       const changed = existingHash !== companyHash;
       const needsWebsiteScrape = (isNew || changed) && hasValue(company.website);
-      const needsYcProfileScrape = (isNew || changed) && hasValue(company.url);
-      const needsScrape = needsWebsiteScrape || needsYcProfileScrape;
-      const needsVendorEnrichment = (isNew || changed) && hasValue(company.website);
+      const needsVendorEnrichment = needsWebsiteScrape;
 
       if (isNew) {
         inserted += 1;
@@ -230,48 +269,48 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
           END,
           updated_at = NOW()
       `, {
-        id: company.id,
+        id,
         name: company.name,
         slug: company.slug,
-        former_names: JSON.stringify(company.former_names),
-        small_logo_thumb_url: company.small_logo_thumb_url ?? null,
-        website: company.website ?? null,
-        all_locations: company.all_locations ?? null,
-        long_description: company.long_description ?? null,
-        one_liner: company.one_liner ?? null,
-        team_size: company.team_size ?? null,
-        highlight_black: company.highlight_black ? 1 : 0,
-        highlight_latinx: company.highlight_latinx ? 1 : 0,
-        highlight_women: company.highlight_women ? 1 : 0,
-        industry: company.industry ?? null,
-        subindustry: company.subindustry ?? null,
-        launched_at: company.launched_at ?? null,
-        tags: JSON.stringify(company.tags),
-        top_company: company.top_company ? 1 : 0,
-        is_hiring: company.isHiring ? 1 : 0,
-        nonprofit: company.nonprofit ? 1 : 0,
-        batch: company.batch ?? null,
-        status: company.status ?? null,
-        industries: JSON.stringify(company.industries),
-        regions: JSON.stringify(company.regions),
-        stage: company.stage ?? null,
-        app_video_public: company.app_video_public ? 1 : 0,
-        demo_day_video_public: company.demo_day_video_public ? 1 : 0,
-        question_answers: company.question_answers ? 1 : 0,
-        url: company.url ?? null,
-        api: company.api ?? null,
-        search_text: buildCompanySearchText(company),
+        former_names: JSON.stringify([]),
+        small_logo_thumb_url: null,
+        website: company.website,
+        all_locations: allLocations,
+        long_description: buildLongDescription(company),
+        one_liner: company.oneLiner,
+        team_size: null,
+        highlight_black: 0,
+        highlight_latinx: 0,
+        highlight_women: 0,
+        industry: company.category,
+        subindustry: company.oneLiner,
+        launched_at: foundedYearToTimestamp(company.foundedYear),
+        tags: JSON.stringify(tags),
+        top_company: 0,
+        is_hiring: 0,
+        nonprofit: 0,
+        batch: null,
+        status: "Active",
+        industries: JSON.stringify(industries),
+        regions: JSON.stringify([company.country]),
+        stage: null,
+        app_video_public: 0,
+        demo_day_video_public: 0,
+        question_answers: 0,
+        url: null,
+        api: null,
+        search_text: buildForbesSearchText(company),
         company_hash: companyHash,
-        source_kind: "yc",
-        source_url: company.url ?? null,
-        source_rank: null,
-        source_year: null,
-        source_list_name: "Y Combinator",
-        founded_year: null,
-        funding: null,
-        needs_scrape: needsScrape ? 1 : 0,
+        source_kind: FORBES_AI50_2026_SOURCE.kind,
+        source_url: FORBES_AI50_2026_SOURCE.url,
+        source_rank: sourceRank,
+        source_year: FORBES_AI50_2026_SOURCE.year,
+        source_list_name: FORBES_AI50_2026_SOURCE.listName,
+        founded_year: company.foundedYear,
+        funding: company.funding,
+        needs_scrape: needsWebsiteScrape ? 1 : 0,
         needs_website_scrape: needsWebsiteScrape ? 1 : 0,
-        needs_yc_profile_scrape: needsYcProfileScrape ? 1 : 0,
+        needs_yc_profile_scrape: 0,
         needs_vendor_enrichment: needsVendorEnrichment ? 1 : 0,
         needs_embed: isNew || changed ? 1 : 0,
       }, client);
@@ -284,7 +323,7 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
         value = EXCLUDED.value,
         updated_at = NOW()
     `, {
-      key: "yc_last_sync_at",
+      key: "forbes_ai50_last_sync_at",
       value: new Date().toISOString(),
     }, client);
 
@@ -295,13 +334,13 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
         value = EXCLUDED.value,
         updated_at = NOW()
     `, {
-      key: "yc_company_count",
-      value: String(companies.length),
+      key: "forbes_ai50_company_count",
+      value: String(FORBES_AI50_2026_COMPANIES.length),
     }, client);
   });
 
   return {
-    total: companies.length,
+    total: FORBES_AI50_2026_COMPANIES.length,
     inserted,
     updated,
     unchanged,
@@ -309,7 +348,7 @@ export async function syncYcCompanies(): Promise<SyncYcSummary> {
 }
 
 async function main() {
-  const summary = await syncYcCompanies();
+  const summary = await syncForbesAi50Companies();
   console.log(JSON.stringify(summary, null, 2));
 }
 

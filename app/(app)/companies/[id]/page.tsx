@@ -20,6 +20,7 @@ import { Button } from "../../../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../../components/ui/card";
 import { badgeStyleFor, nodeColorFor } from "../../../../lib/colors";
 import { buildCompanyLinks } from "../../../../lib/company-links";
+import { sourceBadgeTone, sourceLabel } from "../../../../lib/company-source";
 import { getCompanyDetail } from "../../../../lib/company-details";
 import {
   extractDescriptionFromMarkdown,
@@ -119,6 +120,10 @@ export default async function CompanyPage({
             />
           ) : null}
 
+          {company.vendors.length > 0 ? (
+            <VendorIntelligenceSection vendors={company.vendors} />
+          ) : null}
+
           <Card className="overflow-hidden border-border/60 bg-card/80">
             <CardHeader>
               <CardTitle className="text-xl">Embedding neighborhood</CardTitle>
@@ -173,6 +178,7 @@ function Hero({
   if (company.stage) chips.push({ key: "stage", label: company.stage, accent: `stage:${company.stage}` });
   if (company.industry) chips.push({ key: "industry", label: company.industry, accent: `ind:${company.industry}` });
   if (company.status) chips.push({ key: "status", label: company.status, accent: `status:${company.status}` });
+  chips.push({ key: "source", label: sourceLabel(company.source_kind), accent: sourceBadgeTone(company.source_kind) });
 
   return (
     <section className="relative overflow-hidden rounded-3xl border border-border/40 bg-gradient-to-br from-card via-card/70 to-primary/15 p-6 shadow-xl shadow-black/20 sm:p-10">
@@ -312,6 +318,7 @@ function MetaSidebar({ company }: { company: CompanyDetail }) {
       <CardContent>
         <dl className="grid grid-cols-2 gap-3">
           <MetaItem icon={<Building2 className="size-4" />} label="Status" value={company.status ?? "—"} />
+          <MetaItem icon={<Building2 className="size-4" />} label="Source" value={sourceLabel(company.source_kind)} />
           <MetaItem
             icon={<Users className="size-4" />}
             label="Team size"
@@ -320,9 +327,14 @@ function MetaSidebar({ company }: { company: CompanyDetail }) {
           <MetaItem icon={<MapPin className="size-4" />} label="Location" value={company.all_locations ?? "—"} />
           <MetaItem
             icon={<CalendarDays className="size-4" />}
-            label="Launched"
-            value={company.launched_year ? String(company.launched_year) : "—"}
+            label={company.source_kind === "yc" ? "Launched" : "Founded"}
+            value={company.source_kind === "yc"
+              ? (company.launched_year ? String(company.launched_year) : "—")
+              : (company.founded_year ? String(company.founded_year) : "—")}
           />
+          {company.funding ? (
+            <MetaItem icon={<Briefcase className="size-4" />} label="Funding" value={company.funding} />
+          ) : null}
           <MetaItem
             icon={<Briefcase className="size-4" />}
             label="Subindustry"
@@ -342,6 +354,14 @@ function MetaSidebar({ company }: { company: CompanyDetail }) {
               icon={<ArrowUpRight className="size-4" />}
               label="YC profile"
               href={company.url}
+              span={2}
+            />
+          ) : null}
+          {company.source_url && company.source_url !== company.url ? (
+            <MetaLink
+              icon={<ArrowUpRight className="size-4" />}
+              label={sourceLabel(company.source_kind)}
+              href={company.source_url}
               span={2}
             />
           ) : null}
@@ -546,6 +566,57 @@ function WebsiteSnapshotCard({
             </div>
           </details>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VendorIntelligenceSection({
+  vendors,
+}: {
+  vendors: CompanyDetail["vendors"];
+}) {
+  return (
+    <Card className="border-border/60 bg-card/80">
+      <CardHeader>
+        <CardTitle className="text-xl">Vendors and subprocessors</CardTitle>
+        <CardDescription>
+          Evidence-backed vendor relationships found from trust, security, legal, and privacy pages.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {vendors.map((vendor) => (
+          <div key={`${vendor.id}-${vendor.relationshipType}-${vendor.evidenceUrl ?? ""}`} className="rounded-2xl border border-border/50 bg-background/40 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="font-semibold text-foreground">{vendor.name}</p>
+                {vendor.domain ? (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{vendor.domain}</p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant="muted">{vendor.category}</Badge>
+                <Badge variant="outline">{vendor.relationshipType.replace(/_/g, " ")}</Badge>
+              </div>
+            </div>
+            {vendor.evidenceSnippet ? (
+              <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                {vendor.evidenceSnippet}
+              </p>
+            ) : null}
+            {vendor.evidenceUrl ? (
+              <a
+                href={vendor.evidenceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                Evidence
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            ) : null}
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

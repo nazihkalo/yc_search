@@ -36,6 +36,7 @@ import {
 import { FILTER_VARIANTS } from "@/components/niko-table/lib/constants";
 import type { DataTableColumnDef } from "@/components/niko-table/types";
 import { badgeStyleFor } from "@/lib/colors";
+import { sourceBadgeTone, sourceLabel } from "@/lib/company-source";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
@@ -51,6 +52,7 @@ const OPTIONAL_COLUMNS: TableColumnKey[] = [
   "tags",
   "batch",
   "stage",
+  "source",
   "team_size",
   "status",
   "links",
@@ -62,6 +64,10 @@ const STATUS_OPTIONS = [
   { label: "Hiring", value: "hiring" },
   { label: "Top Company", value: "top" },
   { label: "Nonprofit", value: "nonprofit" },
+];
+const SOURCE_OPTIONS = [
+  { label: "YC", value: "yc" },
+  { label: "Forbes AI 50", value: "forbes_ai50" },
 ];
 const FALLBACK_LOGO_SRC = "/placeholders/company-logo.svg";
 const failedLogoUrls = new Set<string>();
@@ -466,6 +472,31 @@ export function ResultsNikoPreviewTable({
           <span className="text-sm text-muted-foreground">
             {row.original.stage ?? "N/A"}
           </span>
+        ),
+      },
+      {
+        accessorKey: "source_kind",
+        id: "source",
+        size: 112,
+        meta: {
+          label: "Source",
+          variant: FILTER_VARIANTS.SELECT,
+          options: SOURCE_OPTIONS,
+          autoOptions: false,
+        },
+        header: () => (
+          <DataTableColumnHeader>
+            <DataTableColumnTitle title="Source" />
+          </DataTableColumnHeader>
+        ),
+        cell: ({ row }) => (
+          <Badge
+            variant="tinted"
+            className="whitespace-nowrap border"
+            style={badgeStyleFor(sourceBadgeTone(row.original.source_kind))}
+          >
+            {sourceLabel(row.original.source_kind)}
+          </Badge>
         ),
       },
       {

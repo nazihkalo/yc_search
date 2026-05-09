@@ -7,8 +7,10 @@ import { CopilotProvider } from "../../components/dashboard/copilot-provider";
 import { ThemeToggle } from "../../components/theme-toggle";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const copilotEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
+
   return (
-    <CopilotProvider>
+    <CopilotProvider enabled={copilotEnabled}>
       <div className="min-h-screen">
         <header className="sticky top-0 z-40 border-b border-border/40 bg-background/70 backdrop-blur">
           <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6 lg:px-8">

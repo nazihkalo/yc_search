@@ -19,6 +19,7 @@ export type SearchFilters = {
   years: number[];
   stages: string[];
   regions: string[];
+  sources: string[];
   isHiring?: boolean;
   nonprofit?: boolean;
   topCompany?: boolean;
@@ -73,6 +74,14 @@ function buildFilterWhereClause(
   }
   if (filters.topCompany) {
     fragments.push("c.top_company = 1");
+  }
+
+  if (filters.sources.length > 0) {
+    const placeholders = filters.sources.map((_, index) => `@source_${index}`);
+    filters.sources.forEach((source, index) => {
+      params[`source_${index}`] = source;
+    });
+    fragments.push(`c.source_kind IN (${placeholders.join(", ")})`);
   }
 
   if (filters.batches.length > 0) {
@@ -380,6 +389,13 @@ export async function keywordSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
+        c.source_kind,
+        c.source_url,
+        c.source_rank,
+        c.source_year,
+        c.source_list_name,
+        c.founded_year,
+        c.funding,
         ${COMBINED_SNAPSHOT_SELECT_SQL}
       FROM companies c
       ${COMBINED_SNAPSHOT_JOIN_SQL}
@@ -537,6 +553,13 @@ async function semanticSearchLegacy(params: SearchParams, queryVectorLiteral: st
         c.url,
         c.small_logo_thumb_url,
         c.status,
+        c.source_kind,
+        c.source_url,
+        c.source_rank,
+        c.source_year,
+        c.source_list_name,
+        c.founded_year,
+        c.funding,
         ${COMBINED_SNAPSHOT_SELECT_SQL},
         e.vector
       FROM companies c
@@ -610,6 +633,13 @@ async function hybridSearchLegacy(params: SearchParams, queryVectorLiteral: stri
         c.url,
         c.small_logo_thumb_url,
         c.status,
+        c.source_kind,
+        c.source_url,
+        c.source_rank,
+        c.source_year,
+        c.source_list_name,
+        c.founded_year,
+        c.funding,
         ${COMBINED_SNAPSHOT_SELECT_SQL},
         e.vector
       FROM companies c
@@ -709,6 +739,13 @@ export async function semanticSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
+        c.source_kind,
+        c.source_url,
+        c.source_rank,
+        c.source_year,
+        c.source_list_name,
+        c.founded_year,
+        c.funding,
         ${COMBINED_SNAPSHOT_SELECT_SQL},
         1 - (e.vector <=> @query_vector::vector(1536)) AS score
       FROM companies c
@@ -787,6 +824,13 @@ export async function hybridSearch(params: SearchParams) {
         c.url,
         c.small_logo_thumb_url,
         c.status,
+        c.source_kind,
+        c.source_url,
+        c.source_rank,
+        c.source_year,
+        c.source_list_name,
+        c.founded_year,
+        c.funding,
         ${COMBINED_SNAPSHOT_SELECT_SQL},
         ${hybridScoreSql} AS hybrid_score
       FROM companies c
@@ -1021,7 +1065,7 @@ export async function answerCompanyQuestion(
       {
         role: "system",
         content: [
-          "You answer questions about YC companies using provided context only.",
+          "You answer questions about companies in this index using provided context only.",
           "Be concise and concrete.",
           "Return strict JSON with shape:",
           `{"answer":"...","citations":[{"id":123,"name":"...","companyPage":"/companies/123","whyRelevant":"...","urls":["..."]}]}`,
@@ -1090,8 +1134,10 @@ export async function getFacets() {
     regions: string;
     stage: string | null;
     launched_at: number | null;
+    source_kind: string;
+    source_list_name: string | null;
   }>(`
-      SELECT batch, tags, industries, regions, stage, launched_at
+      SELECT batch, tags, industries, regions, stage, launched_at, source_kind, source_list_name
       FROM companies
     `);
 
@@ -1101,8 +1147,10 @@ export async function getFacets() {
   const regionCounts = new Map<string, number>();
   const stageCounts = new Map<string, number>();
   const yearCounts = new Map<number, number>();
+  const sourceCounts = new Map<string, number>();
 
   for (const company of companies) {
+    sourceCounts.set(company.source_kind, (sourceCounts.get(company.source_kind) ?? 0) + 1);
     if (company.batch) {
       batchCounts.set(company.batch, (batchCounts.get(company.batch) ?? 0) + 1);
     }
@@ -1149,6 +1197,7 @@ export async function getFacets() {
     regions: formatFacet(regionCounts),
     stages: formatFacet(stageCounts),
     years: formatFacet(yearCounts).sort((left, right) => Number(right.value) - Number(left.value)),
+    sources: formatFacet(sourceCounts),
   };
 }
 

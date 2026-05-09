@@ -46,6 +46,7 @@ export async function extractFounders(options?: { limit?: number; companyId?: nu
         ON s.company_id = c.id AND s.source = @source
       WHERE s.content_markdown IS NOT NULL
         AND s.content_markdown <> ''
+        AND c.source_kind = 'yc'
         ${whereClause}
       ORDER BY c.id ASC
       ${limitClause}

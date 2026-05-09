@@ -21,6 +21,11 @@ type EmbedCandidate = {
   batch: string | null;
   status: string | null;
   all_locations: string | null;
+  source_kind: string;
+  source_list_name: string | null;
+  source_year: number | null;
+  founded_year: number | null;
+  funding: string | null;
   website_content_markdown: string | null;
   yc_profile_content_markdown: string | null;
 };
@@ -35,6 +40,14 @@ type FounderContextRow = {
   github_bio: string | null;
   top_languages: unknown;
   mention_titles: string[] | null;
+};
+
+type VendorContextRow = {
+  company_id: number;
+  canonical_name: string;
+  category: string;
+  relationship_type: string;
+  evidence_snippet: string | null;
 };
 
 function formatFounderContext(rows: FounderContextRow[]): string {
@@ -87,6 +100,22 @@ function formatFounderContext(rows: FounderContextRow[]): string {
   return blocks.join("\n\n");
 }
 
+function formatVendorContext(rows: VendorContextRow[]): string {
+  if (rows.length === 0) return "";
+  return rows
+    .slice(0, 40)
+    .map((row) => {
+      const parts = [
+        row.canonical_name,
+        row.category,
+        row.relationship_type.replace(/_/g, " "),
+        row.evidence_snippet ? row.evidence_snippet.slice(0, 240) : "",
+      ].filter(Boolean);
+      return parts.join(" | ");
+    })
+    .join("\n");
+}
+
 function parseLimitArg(defaultLimit = 500): number {
   const argument = process.argv.find((value) => value.startsWith("--limit="));
   if (!argument) {
@@ -105,7 +134,7 @@ function parseJsonArray(value: string): string[] {
   }
 }
 
-function buildEmbeddingText(candidate: EmbedCandidate, founderContext: string): string {
+function buildEmbeddingText(candidate: EmbedCandidate, founderContext: string, vendorContext: string): string {
   const tags = parseJsonArray(candidate.tags).join(", ");
   const industries = parseJsonArray(candidate.industries).join(", ");
   const regions = parseJsonArray(candidate.regions).join(", ");
@@ -120,12 +149,16 @@ function buildEmbeddingText(candidate: EmbedCandidate, founderContext: string): 
     `Tags: ${tags}`,
     `Industries: ${industries}`,
     `Regions: ${regions}`,
+    `Source: ${candidate.source_list_name ?? candidate.source_kind} ${candidate.source_year ?? ""}`,
     `Batch: ${candidate.batch ?? ""}`,
     `Stage: ${candidate.stage ?? ""}`,
     `Status: ${candidate.status ?? ""}`,
+    `Founded year: ${candidate.founded_year ?? ""}`,
+    `Funding: ${candidate.funding ?? ""}`,
     `Location: ${candidate.all_locations ?? ""}`,
     `Website content: ${websiteContent}`,
     `YC profile content: ${ycProfileContent}`,
+    `Vendors and subprocessors:\n${vendorContext.slice(0, 6_000)}`,
     `Founders:\n${founderContext.slice(0, 6_000)}`,
   ].join("\n");
 
@@ -158,6 +191,11 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
         c.batch,
         c.status,
         c.all_locations,
+        c.source_kind,
+        c.source_list_name,
+        c.source_year,
+        c.founded_year,
+        c.funding,
         s_website.content_markdown AS website_content_markdown,
         s_yc_profile.content_markdown AS yc_profile_content_markdown
       FROM companies c
@@ -184,7 +222,11 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
   }
 
   const companyIds = candidates.map((candidate) => candidate.id);
-  const founderRows = companyIds.length === 0 ? [] : await query<FounderContextRow>(`
+  let founderRows: FounderContextRow[] = [];
+  let vendorRows: VendorContextRow[] = [];
+  if (companyIds.length > 0) {
+    [founderRows, vendorRows] = await Promise.all([
+      query<FounderContextRow>(`
       SELECT
         f.company_id,
         f.full_name,
@@ -205,7 +247,21 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
       LEFT JOIN founder_github fg ON fg.founder_id = f.id
       WHERE f.company_id = ANY(@company_ids::int[])
       ORDER BY f.company_id ASC, f.id ASC
-    `, { company_ids: `{${companyIds.join(",")}}` });
+      `, { company_ids: `{${companyIds.join(",")}}` }),
+      query<VendorContextRow>(`
+      SELECT
+        cv.company_id,
+        v.canonical_name,
+        cv.category,
+        cv.relationship_type,
+        cv.evidence_snippet
+      FROM company_vendors cv
+      INNER JOIN vendors v ON v.id = cv.vendor_id
+      WHERE cv.company_id = ANY(@company_ids::int[])
+      ORDER BY cv.company_id ASC, cv.confidence DESC, v.canonical_name ASC
+      `, { company_ids: `{${companyIds.join(",")}}` }),
+    ]);
+  }
 
   const foundersByCompany = new Map<number, FounderContextRow[]>();
   for (const row of founderRows) {
@@ -217,6 +273,16 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
     }
   }
 
+  const vendorsByCompany = new Map<number, VendorContextRow[]>();
+  for (const row of vendorRows) {
+    const existing = vendorsByCompany.get(row.company_id);
+    if (existing) {
+      existing.push(row);
+    } else {
+      vendorsByCompany.set(row.company_id, [row]);
+    }
+  }
+
   const limit = pLimit(10);
   let embeddedCount = 0;
   let skippedCount = 0;
@@ -225,7 +291,8 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
     candidates.map((candidate: EmbedCandidate) =>
       limit(async () => {
         const founderContext = formatFounderContext(foundersByCompany.get(candidate.id) ?? []);
-        const embeddingText = buildEmbeddingText(candidate, founderContext);
+        const vendorContext = formatVendorContext(vendorsByCompany.get(candidate.id) ?? []);
+        const embeddingText = buildEmbeddingText(candidate, founderContext, vendorContext);
         const sourceHash = sha256(embeddingText);
         const existing = await queryOne<{ source_hash: string }>(
           "SELECT source_hash FROM company_embeddings WHERE company_id = @id",

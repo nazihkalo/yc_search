@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MessageSquare, Rows3 } from "lucide-react";
 import { CopilotChat } from "@copilotkit/react-ui";
 
@@ -73,7 +73,13 @@ const CHAT_WIDTH_MAX = 760;
 
 type MobileTab = "chat" | "browse";
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  copilotEnabled,
+}: {
+  children: React.ReactNode;
+  copilotEnabled: boolean;
+}) {
   const instructions = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
     return buildInstructions(today);
@@ -103,14 +109,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [chatWidth]);
 
   // Used to gate desktop-only behaviours (collapse button, fixed chat width).
-  const [isLg, setIsLg] = useState(false);
-  useEffect(() => {
+  const isLg = useSyncExternalStore((onStoreChange) => {
     const mql = window.matchMedia("(min-width: 1024px)");
-    setIsLg(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setIsLg(e.matches);
+    const handler = () => onStoreChange();
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
-  }, []);
+  }, () => window.matchMedia("(min-width: 1024px)").matches, () => false);
 
   const draggingRef = useRef(false);
   const startXRef = useRef(0);
@@ -145,6 +149,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   // On mobile, always show full chat regardless of collapsed state.
   const showCollapsedBar = collapsed && isLg;
+
+  if (!copilotEnabled) {
+    return (
+      <div data-browse-pane className="h-[calc(100vh-3rem)] w-full overflow-y-auto">
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-3rem)] w-full flex-col overflow-hidden lg:flex-row">

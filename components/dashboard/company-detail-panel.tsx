@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
+import { sourceBadgeTone, sourceLabel } from "../../lib/company-source";
+import { badgeStyleFor } from "../../lib/colors";
 import { Badge } from "../ui/badge";
 
 type EnrichedFounder = {
@@ -65,7 +67,23 @@ type CompanyDetailPayload = {
   top_company: boolean;
   nonprofit: boolean;
   launched_year: number | null;
+  source_kind: string;
+  source_url: string | null;
+  source_year: number | null;
+  source_list_name: string | null;
+  founded_year: number | null;
+  funding: string | null;
   enriched_founders: EnrichedFounder[];
+  vendors: Array<{
+    id: number;
+    name: string;
+    domain: string | null;
+    category: string;
+    relationshipType: string;
+    confidence: number;
+    evidenceUrl: string | null;
+    evidenceSnippet: string | null;
+  }>;
 };
 
 type FetchState =
@@ -196,6 +214,13 @@ function DetailContent({ company }: { company: CompanyDetailPayload }) {
                   Hiring
                 </Badge>
               ) : null}
+              <Badge
+                variant="tinted"
+                className="border text-[11px]"
+                style={badgeStyleFor(sourceBadgeTone(company.source_kind))}
+              >
+                {sourceLabel(company.source_kind)}
+              </Badge>
             </div>
           </div>
         </div>
@@ -214,6 +239,8 @@ function DetailContent({ company }: { company: CompanyDetailPayload }) {
             </span>
           ) : null}
           {company.launched_year ? <span>Launched {company.launched_year}</span> : null}
+          {company.founded_year ? <span>Founded {company.founded_year}</span> : null}
+          {company.funding ? <span>{company.funding} funding</span> : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -221,6 +248,9 @@ function DetailContent({ company }: { company: CompanyDetailPayload }) {
             <DetailLink href={company.website} icon={Globe} label="Website" />
           ) : null}
           {company.url ? <DetailLink href={company.url} icon={ExternalLink} label="YC profile" /> : null}
+          {company.source_url && company.source_url !== company.url ? (
+            <DetailLink href={company.source_url} icon={ExternalLink} label={sourceLabel(company.source_kind)} />
+          ) : null}
         </div>
       </header>
 
@@ -253,6 +283,55 @@ function DetailContent({ company }: { company: CompanyDetailPayload }) {
           <div className="grid gap-3 sm:grid-cols-2">
             {company.enriched_founders.map((founder) => (
               <FounderProfileCard key={founder.id} founder={founder} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {company.vendors.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Vendors and subprocessors
+          </h2>
+          <div className="grid gap-2">
+            {company.vendors.slice(0, 12).map((vendor) => (
+              <div
+                key={`${vendor.id}-${vendor.relationshipType}-${vendor.evidenceUrl ?? "none"}`}
+                className="rounded-lg border border-border/60 bg-card/50 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{vendor.name}</p>
+                    {vendor.domain ? (
+                      <p className="truncate text-xs text-muted-foreground">{vendor.domain}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="muted" className="text-[11px]">
+                      {vendor.category}
+                    </Badge>
+                    <Badge variant="outline" className="text-[11px]">
+                      {vendor.relationshipType.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                </div>
+                {vendor.evidenceSnippet ? (
+                  <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                    {vendor.evidenceSnippet}
+                  </p>
+                ) : null}
+                {vendor.evidenceUrl ? (
+                  <a
+                    href={vendor.evidenceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    Evidence
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+              </div>
             ))}
           </div>
         </section>

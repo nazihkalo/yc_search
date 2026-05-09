@@ -53,4 +53,11 @@ export type CompanyRecord = {
   url: string | null;
   small_logo_thumb_url: string | null;
   status: string | null;
+  source_kind: string;
+  source_url: string | null;
+  source_rank: number | null;
+  source_year: number | null;
+  source_list_name: string | null;
+  founded_year: number | null;
+  funding: string | null;
 };

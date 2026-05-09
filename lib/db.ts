@@ -78,8 +78,28 @@ export async function initializeDatabase() {
   }
 
   const db = getDb();
-  await db.query(SCHEMA_SQL);
+  try {
+    await db.query(SCHEMA_SQL);
+  } catch (error) {
+    throw new Error(formatDatabaseError(error));
+  }
   initialized = true;
+}
+
+function formatDatabaseError(error: unknown) {
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    const details = error.errors
+      .map((entry) => entry instanceof Error ? entry.message : String(entry))
+      .filter(Boolean)
+      .join("; ");
+    return details || error.message || "Database connection failed";
+  }
+
+  if (error instanceof Error) {
+    return error.message || "Database connection failed";
+  }
+
+  return String(error || "Database connection failed");
 }
 
 export async function isPgVectorReady() {

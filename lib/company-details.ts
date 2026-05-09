@@ -59,6 +59,19 @@ export type EnrichedFounder = {
   siteSnapshot: FounderSiteSnapshotSummary | null;
 };
 
+export type CompanyVendorSummary = {
+  id: number;
+  name: string;
+  domain: string | null;
+  category: string;
+  relationshipType: string;
+  confidence: number;
+  evidenceUrl: string | null;
+  sourceType: string;
+  evidenceSnippet: string | null;
+  lastCheckedAt: string | null;
+};
+
 type FounderJoinRow = {
   id: number;
   full_name: string;
@@ -257,6 +270,53 @@ export async function getEnrichedFounders(companyId: number): Promise<EnrichedFo
   });
 }
 
+async function getCompanyVendors(companyId: number): Promise<CompanyVendorSummary[]> {
+  const rows = await query<{
+    id: string | number;
+    canonical_name: string;
+    domain: string | null;
+    category: string;
+    relationship_type: string;
+    confidence: string | number;
+    evidence_url: string | null;
+    source_type: string;
+    evidence_snippet: string | null;
+    last_checked_at: string | null;
+  }>(`
+    SELECT
+      v.id,
+      v.canonical_name,
+      v.domain,
+      cv.category,
+      cv.relationship_type,
+      cv.confidence,
+      cv.evidence_url,
+      cv.source_type,
+      cv.evidence_snippet,
+      cv.last_checked_at
+    FROM company_vendors cv
+    INNER JOIN vendors v ON v.id = cv.vendor_id
+    WHERE cv.company_id = @company_id
+    ORDER BY
+      cv.relationship_type = 'subprocessor' DESC,
+      cv.confidence DESC,
+      v.canonical_name ASC
+  `, { company_id: companyId });
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    name: row.canonical_name,
+    domain: row.domain,
+    category: row.category,
+    relationshipType: row.relationship_type,
+    confidence: Number(row.confidence),
+    evidenceUrl: row.evidence_url,
+    sourceType: row.source_type,
+    evidenceSnippet: row.evidence_snippet,
+    lastCheckedAt: row.last_checked_at,
+  }));
+}
+
 type CompanyDetailRow = {
   id: number;
   name: string;
@@ -289,6 +349,13 @@ type CompanyDetailRow = {
   url: string | null;
   api: string | null;
   search_text: string;
+  source_kind: string;
+  source_url: string | null;
+  source_rank: number | null;
+  source_year: number | null;
+  source_list_name: string | null;
+  founded_year: number | null;
+  funding: string | null;
   content_markdown: string | null;
   website_url: string | null;
   scraped_at: string | null;
@@ -373,6 +440,13 @@ export async function getCompanyDetail(companyId: number) {
         c.url,
         c.api,
         c.search_text,
+        c.source_kind,
+        c.source_url,
+        c.source_rank,
+        c.source_year,
+        c.source_list_name,
+        c.founded_year,
+        c.funding,
         s_crawl4ai.content_markdown,
         s_crawl4ai.website_url,
         s_crawl4ai.scraped_at,
@@ -404,7 +478,10 @@ export async function getCompanyDetail(companyId: number) {
     ? parseYcCompanyProfileSnapshotMarkdown(row.content_markdown_yc_profile)
     : { socials: [], founders: [], newsItems: [], launches: [] };
 
-  const enrichedFounders = await getEnrichedFounders(companyId);
+  const [enrichedFounders, vendors] = await Promise.all([
+    getEnrichedFounders(companyId),
+    getCompanyVendors(companyId),
+  ]);
 
   return {
     ...row,
@@ -427,6 +504,7 @@ export async function getCompanyDetail(companyId: number) {
     yc_profile_news_items: ycProfile.newsItems,
     yc_profile_launches: ycProfile.launches,
     enriched_founders: enrichedFounders,
+    vendors,
   };
 }
 
