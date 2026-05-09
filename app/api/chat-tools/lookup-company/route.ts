@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     if (!out) {
       return NextResponse.json({
         found: false,
-        message: `No YC company matched '${body.idOrSlug}'.`,
+        message: `No company matched '${body.idOrSlug}'.`,
       });
     }
     return NextResponse.json({ found: true, ...out });

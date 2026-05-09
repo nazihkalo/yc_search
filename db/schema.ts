@@ -32,9 +32,17 @@ CREATE TABLE IF NOT EXISTS companies (
   api TEXT,
   search_text TEXT NOT NULL DEFAULT '',
   company_hash TEXT NOT NULL DEFAULT '',
+  source_kind TEXT NOT NULL DEFAULT 'yc',
+  source_url TEXT,
+  source_rank INTEGER,
+  source_year INTEGER,
+  source_list_name TEXT,
+  founded_year INTEGER,
+  funding TEXT,
   needs_scrape INTEGER NOT NULL DEFAULT 1,
   needs_website_scrape INTEGER NOT NULL DEFAULT 1,
   needs_yc_profile_scrape INTEGER NOT NULL DEFAULT 1,
+  needs_vendor_enrichment INTEGER NOT NULL DEFAULT 1,
   needs_embed INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -105,6 +113,14 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   yc_profile_scrape_failed INTEGER,
   yc_profile_scrape_changed INTEGER,
   yc_profile_scrape_unchanged INTEGER,
+  forbes_ai50_total INTEGER,
+  forbes_ai50_inserted INTEGER,
+  forbes_ai50_updated INTEGER,
+  forbes_ai50_unchanged INTEGER,
+  vendor_enrichment_requested INTEGER,
+  vendor_enrichment_success INTEGER,
+  vendor_enrichment_failed INTEGER,
+  vendor_relationships_upserted INTEGER,
   embed_requested INTEGER,
   embed_success INTEGER,
   embed_skipped INTEGER,
@@ -113,6 +129,14 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS needs_website_scrape INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS needs_yc_profile_scrape INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS needs_vendor_enrichment INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS source_kind TEXT NOT NULL DEFAULT 'yc';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS source_rank INTEGER;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS source_year INTEGER;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS source_list_name TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS founded_year INTEGER;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS funding TEXT;
 
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_requested INTEGER;
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS website_scrape_success INTEGER;
@@ -124,6 +148,112 @@ ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_success INTEGER
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_failed INTEGER;
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_changed INTEGER;
 ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS yc_profile_scrape_unchanged INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS forbes_ai50_total INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS forbes_ai50_inserted INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS forbes_ai50_updated INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS forbes_ai50_unchanged INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS vendor_enrichment_requested INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS vendor_enrichment_success INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS vendor_enrichment_failed INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS vendor_relationships_upserted INTEGER;
+
+CREATE TABLE IF NOT EXISTS vendor_trust_profiles (
+  company_id INTEGER PRIMARY KEY,
+  primary_url TEXT,
+  trust_url TEXT,
+  security_url TEXT,
+  subprocessors_url TEXT,
+  privacy_url TEXT,
+  dpa_url TEXT,
+  last_checked_at TIMESTAMPTZ,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vendor_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  content_markdown TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  error TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, url, source_type),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vendor_url_checks (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  status TEXT NOT NULL,
+  http_status INTEGER,
+  final_url TEXT,
+  content_type TEXT,
+  response_ms INTEGER,
+  error TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, url, phase),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vendors (
+  id BIGSERIAL PRIMARY KEY,
+  canonical_name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL UNIQUE,
+  domain TEXT,
+  category TEXT NOT NULL DEFAULT 'other',
+  aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendors_domain_unique
+  ON vendors(domain)
+  WHERE domain IS NOT NULL AND domain <> '';
+
+CREATE TABLE IF NOT EXISTS company_vendors (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  vendor_id BIGINT NOT NULL,
+  raw_vendor_name TEXT NOT NULL,
+  relationship_type TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other',
+  confidence NUMERIC(4, 3) NOT NULL DEFAULT 0.5,
+  evidence_url TEXT,
+  source_type TEXT NOT NULL,
+  evidence_snippet TEXT,
+  last_checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, vendor_id, relationship_type, evidence_url),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+  FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vendor_candidate_rejections (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  raw_vendor_name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  evidence_url TEXT,
+  source_type TEXT NOT NULL,
+  evidence_snippet TEXT,
+  rejection_reason TEXT NOT NULL,
+  validator TEXT NOT NULL DEFAULT 'deterministic',
+  validator_model TEXT,
+  validator_response JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, normalized_name, evidence_url, source_type),
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS founders (
   id BIGSERIAL PRIMARY KEY,
@@ -216,9 +346,14 @@ CREATE INDEX IF NOT EXISTS idx_companies_nonprofit ON companies(nonprofit);
 CREATE INDEX IF NOT EXISTS idx_companies_top_company ON companies(top_company);
 CREATE INDEX IF NOT EXISTS idx_companies_industry ON companies(industry);
 CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
+CREATE INDEX IF NOT EXISTS idx_companies_source_kind ON companies(source_kind);
+CREATE INDEX IF NOT EXISTS idx_companies_source_year ON companies(source_year);
+CREATE INDEX IF NOT EXISTS idx_companies_source_list_name ON companies(source_list_name);
+CREATE INDEX IF NOT EXISTS idx_companies_founded_year ON companies(founded_year);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_scrape ON companies(needs_scrape);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_website_scrape ON companies(needs_website_scrape);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_yc_profile_scrape ON companies(needs_yc_profile_scrape);
+CREATE INDEX IF NOT EXISTS idx_companies_needs_vendor_enrichment ON companies(needs_vendor_enrichment);
 CREATE INDEX IF NOT EXISTS idx_companies_needs_embed ON companies(needs_embed);
 CREATE INDEX IF NOT EXISTS idx_snapshots_company_id ON website_snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_content_hash ON website_snapshots(content_hash);
@@ -226,6 +361,20 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_source_hash ON company_embeddings(sour
 CREATE INDEX IF NOT EXISTS idx_query_embeddings_updated_at ON query_embeddings(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_status ON sync_runs(status);
+CREATE INDEX IF NOT EXISTS idx_vendor_trust_profiles_checked ON vendor_trust_profiles(last_checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vendor_snapshots_company_id ON vendor_snapshots(company_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_snapshots_content_hash ON vendor_snapshots(content_hash);
+CREATE INDEX IF NOT EXISTS idx_vendor_url_checks_company_id ON vendor_url_checks(company_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_url_checks_phase_status ON vendor_url_checks(phase, status);
+CREATE INDEX IF NOT EXISTS idx_vendor_url_checks_checked_at ON vendor_url_checks(checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vendors_category ON vendors(category);
+CREATE INDEX IF NOT EXISTS idx_company_vendors_company_id ON company_vendors(company_id);
+CREATE INDEX IF NOT EXISTS idx_company_vendors_vendor_id ON company_vendors(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_company_vendors_relationship_type ON company_vendors(relationship_type);
+CREATE INDEX IF NOT EXISTS idx_company_vendors_category ON company_vendors(category);
+CREATE INDEX IF NOT EXISTS idx_vendor_candidate_rejections_company_id ON vendor_candidate_rejections(company_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_candidate_rejections_normalized_name ON vendor_candidate_rejections(normalized_name);
+CREATE INDEX IF NOT EXISTS idx_vendor_candidate_rejections_reason ON vendor_candidate_rejections(rejection_reason);
 
 CREATE INDEX IF NOT EXISTS idx_founders_company_id ON founders(company_id);
 CREATE INDEX IF NOT EXISTS idx_founders_needs_github_enrich ON founders(needs_github_enrich);

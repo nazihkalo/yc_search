@@ -45,6 +45,7 @@ function normalizeFilters(filters?: KnowledgeBaseFilters): SearchFilters {
     years: filters?.years ?? [],
     stages: filters?.stages ?? [],
     regions: filters?.regions ?? [],
+    sources: filters?.sources ?? [],
     isHiring: filters?.isHiring,
     nonprofit: filters?.nonprofit,
     topCompany: filters?.topCompany,
@@ -192,7 +193,7 @@ export async function lookupCompany(
   await initializeDatabase();
 
   const idOrSlug = input.idOrSlug;
-  const isNumericId = typeof idOrSlug === "number" || /^\d+$/.test(String(idOrSlug));
+  const isNumericId = typeof idOrSlug === "number" || /^-?\d+$/.test(String(idOrSlug));
   const params: Record<string, string | number> = {};
   let whereClause: string;
   if (isNumericId) {

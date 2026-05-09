@@ -2,11 +2,13 @@ import { advisoryUnlock, execute, initializeDatabase, query, queryOne, tryAdviso
 import { getSyncEmbedLimit, getSyncRunTimeoutMs, getSyncScrapeLimit } from "./env";
 import { crawlFounderSites, type FounderSiteCrawlSummary } from "../scripts/crawl-founder-sites";
 import { embedCompanies, type EmbedSummary } from "../scripts/embed-companies";
+import { enrichCompanyVendors, type VendorEnrichmentSummary } from "../scripts/enrich-company-vendors";
 import { enrichFoundersExa, type ExaEnrichSummary } from "../scripts/enrich-founders-exa";
 import { enrichFoundersGithub, type GithubEnrichSummary } from "../scripts/enrich-founders-github";
 import { extractFounders, type ExtractFoundersSummary } from "../scripts/extract-founders";
 import { scrapeCompanies, type ScrapeSummary } from "../scripts/scrape-companies";
 import { scrapeYcCompanyPages, type YcProfileScrapeSummary } from "../scripts/scrape-yc-company-pages";
+import { syncForbesAi50Companies, type SyncForbesAi50Summary } from "../scripts/sync-forbes-ai50";
 import { syncYcCompanies, type SyncYcSummary } from "../scripts/sync-yc";
 
 const SYNC_LOCK_KEY = "yc_search_incremental_sync";
@@ -36,6 +38,14 @@ type SyncRunRow = {
   yc_profile_scrape_failed: number | null;
   yc_profile_scrape_changed: number | null;
   yc_profile_scrape_unchanged: number | null;
+  forbes_ai50_total: number | null;
+  forbes_ai50_inserted: number | null;
+  forbes_ai50_updated: number | null;
+  forbes_ai50_unchanged: number | null;
+  vendor_enrichment_requested: number | null;
+  vendor_enrichment_success: number | null;
+  vendor_enrichment_failed: number | null;
+  vendor_relationships_upserted: number | null;
   embed_requested: number | null;
   embed_success: number | null;
   embed_skipped: number | null;
@@ -91,6 +101,8 @@ export type SyncRunSummary =
       scrape: ScrapeSummary;
       websiteScrape: ScrapeSummary;
       ycProfileScrape: YcProfileScrapeSummary;
+      forbesAi50: SyncForbesAi50Summary;
+      vendors: VendorEnrichmentSummary;
       embed: EmbedSummary;
       founders: ExtractFoundersSummary;
       github: GithubEnrichSummary;
@@ -155,9 +167,10 @@ export async function runIncrementalSync(options?: {
       }
 
       try {
-        const { yc, websiteScrape, ycProfileScrape, scrape, embed, founders, github, founderSites, exa } = await withTimeout(
+        const { yc, forbesAi50, websiteScrape, ycProfileScrape, scrape, embed, founders, github, founderSites, exa, vendors } = await withTimeout(
           (async () => {
             const ycResult = await syncYcCompanies();
+            const forbesAi50Result = await syncForbesAi50Companies();
             const websiteScrapeResult = await scrapeCompanies({ limit: scrapeLimit });
             const ycProfileScrapeResult = await scrapeYcCompanyPages({ limit: scrapeLimit });
             const scrapeResult = combineScrapeSummaries(websiteScrapeResult, ycProfileScrapeResult);
@@ -165,9 +178,11 @@ export async function runIncrementalSync(options?: {
             const githubResult = await enrichFoundersGithub();
             const founderSitesResult = await crawlFounderSites();
             const exaResult = await enrichFoundersExa();
+            const vendorsResult = await enrichCompanyVendors({ limit: scrapeLimit });
             const embedResult = await embedCompanies({ limit: embedLimit });
             return {
               yc: ycResult,
+              forbesAi50: forbesAi50Result,
               websiteScrape: websiteScrapeResult,
               ycProfileScrape: ycProfileScrapeResult,
               scrape: scrapeResult,
@@ -176,6 +191,7 @@ export async function runIncrementalSync(options?: {
               github: githubResult,
               founderSites: founderSitesResult,
               exa: exaResult,
+              vendors: vendorsResult,
             };
           })(),
           runTimeoutMs,
@@ -192,6 +208,10 @@ export async function runIncrementalSync(options?: {
               yc_inserted = @yc_inserted,
               yc_updated = @yc_updated,
               yc_unchanged = @yc_unchanged,
+              forbes_ai50_total = @forbes_ai50_total,
+              forbes_ai50_inserted = @forbes_ai50_inserted,
+              forbes_ai50_updated = @forbes_ai50_updated,
+              forbes_ai50_unchanged = @forbes_ai50_unchanged,
               scrape_requested = @scrape_requested,
               scrape_success = @scrape_success,
               scrape_failed = @scrape_failed,
@@ -207,6 +227,10 @@ export async function runIncrementalSync(options?: {
               yc_profile_scrape_failed = @yc_profile_scrape_failed,
               yc_profile_scrape_changed = @yc_profile_scrape_changed,
               yc_profile_scrape_unchanged = @yc_profile_scrape_unchanged,
+              vendor_enrichment_requested = @vendor_enrichment_requested,
+              vendor_enrichment_success = @vendor_enrichment_success,
+              vendor_enrichment_failed = @vendor_enrichment_failed,
+              vendor_relationships_upserted = @vendor_relationships_upserted,
               embed_requested = @embed_requested,
               embed_success = @embed_success,
               embed_skipped = @embed_skipped,
@@ -229,6 +253,10 @@ export async function runIncrementalSync(options?: {
             yc_inserted: yc.inserted,
             yc_updated: yc.updated,
             yc_unchanged: yc.unchanged,
+            forbes_ai50_total: forbesAi50.total,
+            forbes_ai50_inserted: forbesAi50.inserted,
+            forbes_ai50_updated: forbesAi50.updated,
+            forbes_ai50_unchanged: forbesAi50.unchanged,
             scrape_requested: scrape.requested,
             scrape_success: scrape.successCount,
             scrape_failed: scrape.failureCount,
@@ -244,6 +272,10 @@ export async function runIncrementalSync(options?: {
             yc_profile_scrape_failed: ycProfileScrape.failureCount,
             yc_profile_scrape_changed: ycProfileScrape.changedContentCount,
             yc_profile_scrape_unchanged: ycProfileScrape.unchangedContentCount,
+            vendor_enrichment_requested: vendors.requested,
+            vendor_enrichment_success: vendors.successCount,
+            vendor_enrichment_failed: vendors.failureCount,
+            vendor_relationships_upserted: vendors.relationshipsUpserted,
             embed_requested: embed.requested,
             embed_success: embed.embeddedCount,
             embed_skipped: embed.skippedCount,
@@ -269,6 +301,7 @@ export async function runIncrementalSync(options?: {
           scrapeLimit,
           embedLimit,
           yc,
+          forbesAi50,
           scrape,
           websiteScrape,
           ycProfileScrape,
@@ -277,6 +310,7 @@ export async function runIncrementalSync(options?: {
           github,
           founderSites,
           exa,
+          vendors,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -312,6 +346,10 @@ export async function getLatestSyncStatus() {
           yc_inserted,
           yc_updated,
           yc_unchanged,
+          forbes_ai50_total,
+          forbes_ai50_inserted,
+          forbes_ai50_updated,
+          forbes_ai50_unchanged,
           scrape_requested,
           scrape_success,
           scrape_failed,
@@ -327,6 +365,10 @@ export async function getLatestSyncStatus() {
           yc_profile_scrape_failed,
           yc_profile_scrape_changed,
           yc_profile_scrape_unchanged,
+          vendor_enrichment_requested,
+          vendor_enrichment_success,
+          vendor_enrichment_failed,
+          vendor_relationships_upserted,
           embed_requested,
           embed_success,
           embed_skipped,
@@ -354,6 +396,7 @@ export async function getLatestSyncStatus() {
       pending_scrape: string | number;
       pending_website_scrape: string | number;
       pending_yc_profile_scrape: string | number;
+      pending_vendor_enrichment: string | number;
       pending_embed: string | number;
     }>(
       `
@@ -361,6 +404,7 @@ export async function getLatestSyncStatus() {
           COUNT(*) FILTER (WHERE needs_website_scrape = 1 OR needs_yc_profile_scrape = 1) AS pending_scrape,
           COUNT(*) FILTER (WHERE needs_website_scrape = 1) AS pending_website_scrape,
           COUNT(*) FILTER (WHERE needs_yc_profile_scrape = 1) AS pending_yc_profile_scrape,
+          COUNT(*) FILTER (WHERE needs_vendor_enrichment = 1) AS pending_vendor_enrichment,
           COUNT(*) FILTER (WHERE needs_embed = 1) AS pending_embed
         FROM companies
       `,
@@ -388,6 +432,7 @@ export async function getLatestSyncStatus() {
       pendingScrape: Number(backlog?.pending_scrape ?? 0),
       pendingWebsiteScrape: Number(backlog?.pending_website_scrape ?? 0),
       pendingYcProfileScrape: Number(backlog?.pending_yc_profile_scrape ?? 0),
+      pendingVendorEnrichment: Number(backlog?.pending_vendor_enrichment ?? 0),
       pendingEmbed: Number(backlog?.pending_embed ?? 0),
       pendingFounderGithub: Number(founderBacklog?.pending_github_enrich ?? 0),
       pendingFounderSiteCrawl: Number(founderBacklog?.pending_site_crawl ?? 0),

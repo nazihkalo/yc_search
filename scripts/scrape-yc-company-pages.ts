@@ -82,6 +82,7 @@ export async function scrapeYcCompanyPages(options?: { limit?: number }): Promis
       SELECT id, name, url, top_company
       FROM companies
       WHERE needs_yc_profile_scrape = 1
+        AND source_kind = 'yc'
         AND url IS NOT NULL
         AND TRIM(url) != ''
       ORDER BY id ASC

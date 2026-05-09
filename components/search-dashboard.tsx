@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import {
+  ArrowUpRight,
   BarChart3,
+  Building2,
   LayoutGrid,
   Network,
   Rows3,
@@ -18,6 +21,7 @@ import { DashboardCopilotBridge } from "./dashboard/copilot-actions";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
 import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
 import { CompaniesForceGraphTab } from "./graph/companies-force-graph-lazy";
+import { VendorLogo } from "./vendor-logo";
 import type { GraphNode } from "../lib/graph";
 import type {
   AnalyticsResponse,
@@ -28,12 +32,29 @@ import type {
 } from "./dashboard/types";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { sourceLabel } from "../lib/company-source";
 import { cn } from "../lib/utils";
 
 type AnalyticsColorBy = "none" | "tags" | "industries";
 type ResultsView = "cards" | "table";
 type SortOption = "relevance" | "newest" | "team_size" | "name";
-type DashboardTab = "results" | "analytics";
+type DashboardTab = "results" | "analytics" | "vendors";
+type VendorAnalyticsResponse = {
+  totalCompanies: number;
+  totalRelationships: number;
+  topVendors: Array<{
+    id: number;
+    name: string;
+    category: string;
+    domain: string | null;
+    companyCount: number;
+    relationshipCount: number;
+    sourceCounts: Record<string, number>;
+  }>;
+  categories: Array<{ category: string; companyCount: number; relationshipCount: number }>;
+  sourceKinds: Array<{ sourceKind: string; companyCount: number; relationshipCount: number }>;
+  relationshipTypes: Array<{ relationshipType: string; companyCount: number; relationshipCount: number }>;
+};
 
 const CARD_PAGE_SIZE = 24;
 const DEFAULT_TABLE_PAGE_SIZE = 50;
@@ -42,6 +63,7 @@ const DEFAULT_TABLE_COLUMNS: TableColumnKey[] = [
   "score",
   "industries",
   "tags",
+  "source",
   "batch",
   "stage",
   "team_size",
@@ -52,6 +74,7 @@ const ALL_TABLE_COLUMNS: Array<{ key: TableColumnKey; label: string }> = [
   { key: "score", label: "Score" },
   { key: "industries", label: "Industries" },
   { key: "tags", label: "Tags" },
+  { key: "source", label: "Source" },
   { key: "batch", label: "Batch" },
   { key: "stage", label: "Stage" },
   { key: "team_size", label: "Team size" },
@@ -133,7 +156,7 @@ function setCachedSearchResponse(cacheKey: string, payload: SearchResponse) {
   }
 }
 
-export function SearchDashboard() {
+export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: boolean }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -163,7 +186,6 @@ export function SearchDashboard() {
       }
     }, 250);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftQuery]);
 
   const [sort, setSort] = useState<SortOption>((searchParams.get("sort") as SortOption) ?? "relevance");
@@ -174,6 +196,7 @@ export function SearchDashboard() {
   const [years, setYears] = useState<number[]>(parseYears(searchParams.get("years")));
   const [regions, setRegions] = useState<string[]>(parseCsv(searchParams.get("regions")));
   const [stages, setStages] = useState<string[]>(parseCsv(searchParams.get("stages")));
+  const [sources, setSources] = useState<string[]>(parseCsv(searchParams.get("sources")));
   const [isHiring, setIsHiring] = useState(searchParams.get("isHiring") === "1");
   const [nonprofit, setNonprofit] = useState(searchParams.get("nonprofit") === "1");
   const [topCompany, setTopCompany] = useState(searchParams.get("topCompany") === "1");
@@ -185,6 +208,7 @@ export function SearchDashboard() {
   const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
     (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
+  const [vendorCategory, setVendorCategory] = useState(searchParams.get("vendorCategory") ?? "");
   const [graphOpen, setGraphOpen] = useState(searchParams.get("graph") === "1");
   const [graphRatio, setGraphRatio] = useState(() => {
     const raw = Number(searchParams.get("graphW"));
@@ -192,7 +216,7 @@ export function SearchDashboard() {
   });
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(() => {
     const raw = Number(searchParams.get("company"));
-    return Number.isFinite(raw) && raw > 0 ? raw : null;
+    return Number.isFinite(raw) && raw !== 0 ? raw : null;
   });
   const [highlightCompanyId, setHighlightCompanyId] = useState<number | null>(null);
 
@@ -223,6 +247,7 @@ export function SearchDashboard() {
 
   const [error, setError] = useState<string | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [vendorAnalyticsError, setVendorAnalyticsError] = useState<string | null>(null);
   const [facets, setFacets] = useState<FacetsPayload | null>(null);
   const [results, setResults] = useState<SearchResponse>({
     total: 0,
@@ -231,10 +256,12 @@ export function SearchDashboard() {
     results: [],
   });
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [vendorAnalytics, setVendorAnalytics] = useState<VendorAnalyticsResponse | null>(null);
   const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [loadingMoreCards, setLoadingMoreCards] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [vendorAnalyticsLoading, setVendorAnalyticsLoading] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -278,6 +305,9 @@ export function SearchDashboard() {
     if (stages.length) {
       params.set("stages", arrayToCsv(stages));
     }
+    if (sources.length) {
+      params.set("sources", arrayToCsv(sources));
+    }
     if (isHiring) {
       params.set("isHiring", "1");
     }
@@ -286,6 +316,9 @@ export function SearchDashboard() {
     }
     if (topCompany) {
       params.set("topCompany", "1");
+    }
+    if (activeTab === "vendors" && vendorCategory) {
+      params.set("vendorCategory", vendorCategory);
     }
     if (graphOpen) {
       params.set("graph", "1");
@@ -306,9 +339,11 @@ export function SearchDashboard() {
     query,
     regions,
     sort,
+    sources,
     stages,
     tags,
     topCompany,
+    vendorCategory,
     visibleTableColumns,
     view,
     years,
@@ -402,6 +437,31 @@ export function SearchDashboard() {
       .finally(() => setAnalyticsLoading(false));
   }, [activeTab, analyticsColorBy, baseQueryString]);
 
+  useEffect(() => {
+    if (activeTab !== "vendors") {
+      return;
+    }
+
+    const params = new URLSearchParams(baseQueryString);
+    params.set("topN", "50");
+    setVendorAnalyticsLoading(true);
+
+    fetch(`/api/vendors?${params.toString()}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        setVendorAnalyticsError(null);
+        setVendorAnalytics(payload);
+      })
+      .catch((fetchError) => {
+        const message = fetchError instanceof Error ? fetchError.message : "Vendor analytics request failed";
+        setVendorAnalyticsError(message);
+      })
+      .finally(() => setVendorAnalyticsLoading(false));
+  }, [activeTab, baseQueryString]);
+
   function toggleArrayValue<T extends string | number>(
     value: T,
     values: T[],
@@ -427,6 +487,11 @@ export function SearchDashboard() {
   function addOrToggleBatch(batch: string) {
     setPage(1);
     toggleArrayValue(batch, batches, setBatches);
+  }
+
+  function setSourceFilter(source: string | null) {
+    setPage(1);
+    setSources(source ? [source] : []);
   }
 
   function handleLegendDrilldown(clickedSeries: string | number | undefined) {
@@ -562,6 +627,23 @@ export function SearchDashboard() {
         toggleArrayValue(value, regions, setRegions);
       },
     })),
+    ...sources.map((value) => ({
+      key: `source-${value}`,
+      label: sourceLabel(value),
+      onRemove: () => setSourceFilter(null),
+    })),
+    ...(activeTab === "vendors" && vendorCategory
+      ? [
+          {
+            key: `vendor-category-${vendorCategory}`,
+            label: `Vendor: ${vendorCategory}`,
+            onRemove: () => {
+              setPage(1);
+              setVendorCategory("");
+            },
+          },
+        ]
+      : []),
     ...(isHiring
       ? [
           {
@@ -602,6 +684,7 @@ export function SearchDashboard() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+      {copilotEnabled ? (
       <DashboardCopilotBridge
         state={{
           query,
@@ -611,6 +694,7 @@ export function SearchDashboard() {
           stages,
           regions,
           years,
+          sources,
           isHiring,
           nonprofit,
           topCompany,
@@ -632,6 +716,7 @@ export function SearchDashboard() {
                 batches: facets.batches,
                 stages: facets.stages,
                 regions: facets.regions,
+                sources: facets.sources,
               }
             : null,
         }}
@@ -660,6 +745,10 @@ export function SearchDashboard() {
             setPage(1);
             setRegions(v);
           },
+          setSources: (v) => {
+            setPage(1);
+            setSources(v);
+          },
           setYears: (v) => {
             setPage(1);
             setYears(v);
@@ -687,6 +776,7 @@ export function SearchDashboard() {
           setHighlightCompanyId,
         }}
       />
+      ) : null}
 
       {selectedCompanyId !== null ? (
         /* Outer: scrollable backdrop — clicking empty area dismisses */
@@ -753,6 +843,8 @@ export function SearchDashboard() {
             </button>
           ) : null}
         </div>
+
+        <SourceFilterStrip selectedSources={sources} onSelectSource={setSourceFilter} />
 
         {activeFilters.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -915,7 +1007,7 @@ export function SearchDashboard() {
               />
             )}
           </section>
-        ) : (
+        ) : activeTab === "analytics" ? (
           <section className="space-y-6">
             <Card className="border-border/70 bg-card/95">
               <CardHeader className="pb-4">
@@ -1100,9 +1192,338 @@ export function SearchDashboard() {
             </div>
 
           </section>
+        ) : (
+          <section className="space-y-6">
+            <VendorAnalyticsPanel
+              analytics={vendorAnalytics}
+              isLoading={vendorAnalyticsLoading}
+              error={vendorAnalyticsError}
+              selectedCategory={vendorCategory}
+              returnToPath={`/dashboard?${baseQueryString}`}
+              onCategoryChange={(nextCategory) => {
+                setPage(1);
+                setVendorCategory(nextCategory);
+              }}
+            />
+
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">Filtered results</p>
+                  <p className="text-xs text-muted-foreground">
+                    Vendor filters share the same company result set.
+                  </p>
+                </div>
+              </div>
+
+              {resultsLoading && results.results.length === 0 ? (
+                <LoadingState label="Refreshing results..." />
+              ) : view === "cards" ? (
+                <ResultsCardGrid
+                  results={results.results}
+                  returnToPath={returnToPath}
+                  selectedTags={tags}
+                  selectedIndustries={industries}
+                  onToggleTag={addOrToggleTag}
+                  onToggleIndustry={addOrToggleIndustry}
+                />
+              ) : (
+                <ResultsNikoPreviewTable
+                  results={results.results}
+                  total={results.total}
+                  page={page}
+                  pageSize={results.pageSize}
+                  pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
+                  returnToPath={returnToPath}
+                  sort={sort}
+                  visibleColumns={visibleTableColumns}
+                  selectedTags={tags}
+                  selectedIndustries={industries}
+                  selectedBatches={batches}
+                  selectedStages={stages}
+                  selectedRegions={regions}
+                  isHiring={isHiring}
+                  topCompany={topCompany}
+                  nonprofit={nonprofit}
+                  tagOptions={pickTopFacets(facets?.tags ?? [], 20)}
+                  industryOptions={pickTopFacets(facets?.industries ?? [], 16)}
+                  batchOptions={pickTopFacets(facets?.batches ?? [], 20)}
+                  stageOptions={pickTopFacets(facets?.stages ?? [], 12)}
+                  regionOptions={pickTopFacets(facets?.regions ?? [], 12)}
+                  isLoading={resultsLoading}
+                  onSortChange={(nextSort) => {
+                    setPage(1);
+                    setSort(nextSort);
+                  }}
+                  onPageChange={setPage}
+                  onPageSizeChange={(nextSize) => {
+                    setPage(1);
+                    setTablePageSize(nextSize);
+                  }}
+                  onVisibleColumnsChange={setVisibleTableColumns}
+                  onYearsChange={(nextYears) => {
+                    setPage(1);
+                    setYears(nextYears);
+                  }}
+                  onTagsChange={(nextTags) => {
+                    setPage(1);
+                    setTags(nextTags);
+                  }}
+                  onIndustriesChange={(nextIndustries) => {
+                    setPage(1);
+                    setIndustries(nextIndustries);
+                  }}
+                  onBatchesChange={(nextBatches) => {
+                    setPage(1);
+                    setBatches(nextBatches);
+                  }}
+                  onStagesChange={(nextStages) => {
+                    setPage(1);
+                    setStages(nextStages);
+                  }}
+                  onRegionsChange={(nextRegions) => {
+                    setPage(1);
+                    setRegions(nextRegions);
+                  }}
+                  onStatusFlagsChange={(nextStatus) => {
+                    setPage(1);
+                    setIsHiring(nextStatus.isHiring);
+                    setTopCompany(nextStatus.topCompany);
+                    setNonprofit(nextStatus.nonprofit);
+                  }}
+                  selectedYears={years}
+                  toolbarPrefix={
+                    <ResultsControlStrip
+                      activeTab={activeTab}
+                      onActiveTabChange={setActiveTab}
+                      sort={sort}
+                      onSortChange={(nextSort) => {
+                        setPage(1);
+                        setSort(nextSort);
+                      }}
+                      view={view}
+                      onViewChange={setView}
+                      graphOpen={graphOpen}
+                      onToggleGraph={() => setGraphOpen((open) => !open)}
+                    />
+                  }
+                />
+              )}
+            </div>
+          </section>
         )}
         </SplitLayout>
       </div>
+      </div>
+    </div>
+  );
+}
+
+function SourceFilterStrip({
+  selectedSources,
+  onSelectSource,
+}: {
+  selectedSources: string[];
+  onSelectSource: (source: string | null) => void;
+}) {
+  const selected = selectedSources[0] ?? "all";
+  const options = [
+    { value: "all", label: "All" },
+    { value: "yc", label: "YC" },
+    { value: "forbes_ai50", label: "Forbes AI 50" },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+        Source
+      </span>
+      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onSelectSource(option.value === "all" ? null : option.value)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium transition",
+              selected === option.value
+                ? "bg-secondary text-secondary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VendorAnalyticsPanel({
+  analytics,
+  isLoading,
+  error,
+  selectedCategory,
+  returnToPath,
+  onCategoryChange,
+}: {
+  analytics: VendorAnalyticsResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  selectedCategory: string;
+  returnToPath: string;
+  onCategoryChange: (category: string) => void;
+}) {
+  if (error) {
+    return <ErrorBanner message={error} />;
+  }
+
+  if (isLoading) {
+    return <LoadingState label="Refreshing vendor analytics..." />;
+  }
+
+  if (!analytics || analytics.totalRelationships === 0) {
+    return (
+      <Card className="border-border/70 bg-card/95">
+        <CardContent className="px-6 py-10 text-center">
+          <p className="text-sm font-medium">No vendor intelligence yet</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Run vendor enrichment to populate subprocessors and detected technologies.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
+      <Card className="border-border/70 bg-card/95">
+        <CardHeader className="pb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="text-base">Vendor directory</CardTitle>
+              <CardDescription>
+                {analytics.totalRelationships.toLocaleString()} evidence-backed relationships across{" "}
+                {analytics.totalCompanies.toLocaleString()} companies
+                {selectedCategory ? ` in ${selectedCategory}` : ""}.
+              </CardDescription>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-right sm:min-w-44">
+              <div className="rounded-lg border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-lg font-semibold">{analytics.topVendors.length.toLocaleString()}</p>
+                <p className="text-[11px] text-muted-foreground">vendors shown</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-lg font-semibold">{analytics.totalCompanies.toLocaleString()}</p>
+                <p className="text-[11px] text-muted-foreground">companies</p>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {analytics.topVendors.map((vendor) => (
+            <Link
+              key={vendor.id}
+              href={`/vendors/${vendor.id}?returnTo=${encodeURIComponent(returnToPath)}`}
+              className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-background/50 px-3 py-3 transition hover:border-primary/40 hover:bg-background/80 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <VendorLogo name={vendor.name} domain={vendor.domain} size="md" />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-medium group-hover:text-primary">{vendor.name}</p>
+                    <span className="rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground">
+                      {vendor.category}
+                    </span>
+                  </div>
+                  {vendor.domain ? (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{vendor.domain}</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-muted-foreground sm:justify-end">
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
+                  <Building2 className="size-3" />
+                  {vendor.companyCount.toLocaleString()}
+                </span>
+                {Object.entries(vendor.sourceCounts).map(([source, count]) => (
+                  <span key={`${vendor.id}-${source}`} className="rounded-full bg-muted px-2 py-0.5">
+                    {sourceLabel(source)} {count}
+                  </span>
+                ))}
+                <ArrowUpRight className="size-3.5 opacity-50 transition group-hover:opacity-100" />
+              </div>
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4">
+        <Card className="border-border/70 bg-card/95">
+          <CardHeader className="pb-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Categories</CardTitle>
+                <CardDescription>Filter vendors by company coverage.</CardDescription>
+              </div>
+              {selectedCategory ? (
+                <button
+                  type="button"
+                  onClick={() => onCategoryChange("")}
+                  className="rounded-full border border-border/70 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <button
+              type="button"
+              onClick={() => onCategoryChange("")}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                selectedCategory
+                  ? "text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                  : "bg-secondary text-secondary-foreground",
+              )}
+            >
+              <span>All categories</span>
+              <span className="font-medium">{selectedCategory ? "Reset" : analytics.topVendors.length.toLocaleString()}</span>
+            </button>
+            {analytics.categories.slice(0, 12).map((category) => (
+              <button
+                key={category.category}
+                type="button"
+                onClick={() => onCategoryChange(category.category)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                  selectedCategory === category.category
+                    ? "bg-secondary text-secondary-foreground"
+                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+                )}
+              >
+                <span className="truncate">{category.category}</span>
+                <span className="font-medium">{category.companyCount.toLocaleString()}</span>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/70 bg-card/95">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Relationship types</CardTitle>
+            <CardDescription>How vendors were found in evidence.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {analytics.relationshipTypes.map((item) => (
+              <div key={item.relationshipType} className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate text-muted-foreground">{item.relationshipType.replace(/_/g, " ")}</span>
+                <span className="font-medium">{item.companyCount.toLocaleString()}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -1147,23 +1568,6 @@ function SegmentedControl({
           {option.label}
         </Button>
       ))}
-    </div>
-  );
-}
-
-function ControlGroup({
-  label,
-  children,
-  className,
-}: {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn("space-y-1.5", className)}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
-      {children}
     </div>
   );
 }
@@ -1381,7 +1785,7 @@ function ResultsControlStrip({
     <div className="flex flex-wrap items-center gap-2">
       {/* Browse tabs */}
       <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
-        {(["results", "analytics"] as DashboardTab[]).map((tab) => (
+        {(["results", "analytics", "vendors"] as DashboardTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -1393,8 +1797,14 @@ function ResultsControlStrip({
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {tab === "results" ? <Rows3 className="size-3" /> : <BarChart3 className="size-3" />}
-            {tab === "results" ? "Results" : "Analytics"}
+            {tab === "results" ? (
+              <Rows3 className="size-3" />
+            ) : tab === "analytics" ? (
+              <BarChart3 className="size-3" />
+            ) : (
+              <Network className="size-3" />
+            )}
+            {tab === "results" ? "Results" : tab === "analytics" ? "Analytics" : "Vendors"}
           </button>
         ))}
       </div>

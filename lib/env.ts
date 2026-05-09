@@ -98,6 +98,35 @@ export function getOpenAiApiKey() {
   return value;
 }
 
+export function shouldValidateNetNewVendors() {
+  return process.env.VENDOR_LLM_VALIDATION !== "0";
+}
+
+export function getVendorValidationModel() {
+  const value = process.env.VENDOR_VALIDATION_MODEL?.trim();
+  return value && value.length > 0 ? value : "gpt-4o-mini";
+}
+
+export function getVendorEnrichmentConcurrency() {
+  return parsePositiveInt(process.env.VENDOR_ENRICHMENT_CONCURRENCY, 3);
+}
+
+export function getVendorPreflightTimeoutMs() {
+  return parsePositiveInt(process.env.VENDOR_PREFLIGHT_TIMEOUT_MS, 5_000);
+}
+
+export function getVendorDnsTimeoutMs() {
+  return parsePositiveInt(process.env.VENDOR_DNS_TIMEOUT_MS, 2_500);
+}
+
+export function getVendorDiscoveryUrlLimit() {
+  return parsePositiveInt(process.env.VENDOR_DISCOVERY_URL_LIMIT, 14);
+}
+
+export function getVendorBrowserFallbackLimit() {
+  return parsePositiveInt(process.env.VENDOR_BROWSER_FALLBACK_LIMIT, 3);
+}
+
 export function getAppSalt() {
   const value = process.env.APP_SALT?.trim();
   if (value && value.length >= 8) return value;

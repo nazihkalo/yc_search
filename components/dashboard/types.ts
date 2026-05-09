@@ -12,6 +12,7 @@ export type FacetsPayload = {
   regions: FacetItem<string>[];
   stages: FacetItem<string>[];
   years: FacetItem<number>[];
+  sources: FacetItem<string>[];
 };
 
 export type CompanyResult = {
@@ -37,6 +38,13 @@ export type CompanyResult = {
   url: string | null;
   small_logo_thumb_url: string | null;
   status: string | null;
+  source_kind: string;
+  source_url: string | null;
+  source_rank: number | null;
+  source_year: number | null;
+  source_list_name: string | null;
+  founded_year: number | null;
+  funding: string | null;
   score?: number;
   top_links: CompanyLink[];
 };
@@ -54,6 +62,7 @@ export type TableColumnKey =
   | "tags"
   | "batch"
   | "stage"
+  | "source"
   | "team_size"
   | "status"
   | "links"

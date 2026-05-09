@@ -14,6 +14,7 @@ const bodySchema = z.object({
       batches: z.array(z.string()).optional(),
       stages: z.array(z.string()).optional(),
       regions: z.array(z.string()).optional(),
+      sources: z.array(z.string()).optional(),
     })
     .optional(),
 });

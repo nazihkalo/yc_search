@@ -3,7 +3,9 @@
 import { MapPin, Sparkles, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { badgeStyleFor } from "../../lib/colors";
 import { cn } from "../../lib/utils";
+import { sourceBadgeTone, sourceLabel } from "../../lib/company-source";
 import { Badge } from "../ui/badge";
 import { Card, CardContent } from "../ui/card";
 import { CompanyLinksRow } from "./company-links-row";
@@ -67,6 +69,13 @@ export function ResultsCardGrid({
                         {company.score.toFixed(3)}
                       </Badge>
                     ) : null}
+                    <Badge
+                      variant="tinted"
+                      className="border"
+                      style={badgeStyleFor(sourceBadgeTone(company.source_kind))}
+                    >
+                      {sourceLabel(company.source_kind)}
+                    </Badge>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {company.one_liner ?? "No one-liner available."}
