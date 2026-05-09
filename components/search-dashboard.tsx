@@ -208,6 +208,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
   const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
     (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
+  const [vendorCategory, setVendorCategory] = useState(searchParams.get("vendorCategory") ?? "");
   const [graphOpen, setGraphOpen] = useState(searchParams.get("graph") === "1");
   const [graphRatio, setGraphRatio] = useState(() => {
     const raw = Number(searchParams.get("graphW"));
@@ -316,6 +317,9 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     if (topCompany) {
       params.set("topCompany", "1");
     }
+    if (activeTab === "vendors" && vendorCategory) {
+      params.set("vendorCategory", vendorCategory);
+    }
     if (graphOpen) {
       params.set("graph", "1");
       if (graphRatio !== 0.5) {
@@ -339,6 +343,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     stages,
     tags,
     topCompany,
+    vendorCategory,
     visibleTableColumns,
     view,
     years,
@@ -627,6 +632,18 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
       label: sourceLabel(value),
       onRemove: () => setSourceFilter(null),
     })),
+    ...(activeTab === "vendors" && vendorCategory
+      ? [
+          {
+            key: `vendor-category-${vendorCategory}`,
+            label: `Vendor: ${vendorCategory}`,
+            onRemove: () => {
+              setPage(1);
+              setVendorCategory("");
+            },
+          },
+        ]
+      : []),
     ...(isHiring
       ? [
           {
@@ -1181,6 +1198,12 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
               analytics={vendorAnalytics}
               isLoading={vendorAnalyticsLoading}
               error={vendorAnalyticsError}
+              selectedCategory={vendorCategory}
+              returnToPath={`/dashboard?${baseQueryString}`}
+              onCategoryChange={(nextCategory) => {
+                setPage(1);
+                setVendorCategory(nextCategory);
+              }}
             />
 
             <div className="space-y-4">
@@ -1340,10 +1363,16 @@ function VendorAnalyticsPanel({
   analytics,
   isLoading,
   error,
+  selectedCategory,
+  returnToPath,
+  onCategoryChange,
 }: {
   analytics: VendorAnalyticsResponse | null;
   isLoading: boolean;
   error: string | null;
+  selectedCategory: string;
+  returnToPath: string;
+  onCategoryChange: (category: string) => void;
 }) {
   if (error) {
     return <ErrorBanner message={error} />;
@@ -1375,7 +1404,8 @@ function VendorAnalyticsPanel({
               <CardTitle className="text-base">Vendor directory</CardTitle>
               <CardDescription>
                 {analytics.totalRelationships.toLocaleString()} evidence-backed relationships across{" "}
-                {analytics.totalCompanies.toLocaleString()} companies.
+                {analytics.totalCompanies.toLocaleString()} companies
+                {selectedCategory ? ` in ${selectedCategory}` : ""}.
               </CardDescription>
             </div>
             <div className="grid grid-cols-2 gap-2 text-right sm:min-w-44">
@@ -1394,7 +1424,7 @@ function VendorAnalyticsPanel({
           {analytics.topVendors.map((vendor) => (
             <Link
               key={vendor.id}
-              href={`/vendors/${vendor.id}?returnTo=${encodeURIComponent("/dashboard?tab=vendors")}`}
+              href={`/vendors/${vendor.id}?returnTo=${encodeURIComponent(returnToPath)}`}
               className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-background/50 px-3 py-3 transition hover:border-primary/40 hover:bg-background/80 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 items-center gap-3">
@@ -1431,15 +1461,51 @@ function VendorAnalyticsPanel({
       <div className="space-y-4">
         <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-4">
-            <CardTitle className="text-base">Categories</CardTitle>
-            <CardDescription>Vendor categories by company coverage.</CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Categories</CardTitle>
+                <CardDescription>Filter vendors by company coverage.</CardDescription>
+              </div>
+              {selectedCategory ? (
+                <button
+                  type="button"
+                  onClick={() => onCategoryChange("")}
+                  className="rounded-full border border-border/70 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent className="space-y-2">
+            <button
+              type="button"
+              onClick={() => onCategoryChange("")}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                selectedCategory
+                  ? "text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                  : "bg-secondary text-secondary-foreground",
+              )}
+            >
+              <span>All categories</span>
+              <span className="font-medium">{selectedCategory ? "Reset" : analytics.topVendors.length.toLocaleString()}</span>
+            </button>
             {analytics.categories.slice(0, 12).map((category) => (
-              <div key={category.category} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate text-muted-foreground">{category.category}</span>
+              <button
+                key={category.category}
+                type="button"
+                onClick={() => onCategoryChange(category.category)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                  selectedCategory === category.category
+                    ? "bg-secondary text-secondary-foreground"
+                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+                )}
+              >
+                <span className="truncate">{category.category}</span>
                 <span className="font-medium">{category.companyCount.toLocaleString()}</span>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>

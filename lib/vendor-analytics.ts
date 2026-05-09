@@ -206,7 +206,7 @@ export async function getVendorAnalytics(
 
   if (options.category) {
     queryParams.vendor_category = options.category;
-    whereClauses.push("cv.category = @vendor_category");
+    whereClauses.push("v.category = @vendor_category");
   }
 
   if (options.sourceListName) {
@@ -273,10 +273,10 @@ export async function getVendorAnalytics(
     vendor.sourceCompanyIds.set(row.source_kind, sourceSet);
     vendors.set(vendorId, vendor);
 
-    const category = categories.get(row.relationship_category) ?? { companyIds: new Set<number>(), relationshipCount: 0 };
+    const category = categories.get(row.vendor_category) ?? { companyIds: new Set<number>(), relationshipCount: 0 };
     category.companyIds.add(row.company_id);
     category.relationshipCount += 1;
-    categories.set(row.relationship_category, category);
+    categories.set(row.vendor_category, category);
 
     const source = sources.get(row.source_kind) ?? { companyIds: new Set<number>(), relationshipCount: 0 };
     source.companyIds.add(row.company_id);
