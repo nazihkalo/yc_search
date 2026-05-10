@@ -1,8 +1,11 @@
 import { SignIn } from "@clerk/nextjs";
 
+import { AuthRedirectGuard } from "../../../components/auth/auth-redirect-guard";
+
 export default function SignInPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+      <AuthRedirectGuard />
       <div
         aria-hidden
         className="pointer-events-none absolute -top-40 left-1/2 size-[680px] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl"
