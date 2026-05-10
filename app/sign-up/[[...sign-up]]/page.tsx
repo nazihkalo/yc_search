@@ -1,11 +1,13 @@
 import { Suspense } from "react";
 import { SignUp } from "@clerk/nextjs";
 
+import { AuthRedirectGuard } from "../../../components/auth/auth-redirect-guard";
 import { StorePendingQuestion } from "../../../components/auth/store-pending-question";
 
 export default function SignUpPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+      <AuthRedirectGuard />
       <Suspense fallback={null}>
         <StorePendingQuestion />
       </Suspense>

@@ -3,6 +3,9 @@ import { Suspense } from "react";
 import { DashboardShell } from "../../../components/dashboard/dashboard-shell";
 import { SearchDashboard } from "../../../components/search-dashboard";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function DashboardPage() {
   const copilotEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
 

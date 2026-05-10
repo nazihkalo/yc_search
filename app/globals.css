@@ -199,8 +199,12 @@ copilotkit-inspector {
    and make the document taller than the viewport (window scroll bug). */
 .copilotKitChat {
   height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 /* Prevent scroll chaining from the messages list to the window. */
 .copilotKitMessages {
+  min-height: 0;
   overscroll-behavior: contain;
 }

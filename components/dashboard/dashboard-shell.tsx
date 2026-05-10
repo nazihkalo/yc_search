@@ -87,6 +87,22 @@ export function DashboardShell({
 
   const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
 
+  useEffect(() => {
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyHeight = document.body.style.height;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.body.style.height = "100dvh";
+
+    return () => {
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.height = previousBodyHeight;
+    };
+  }, []);
+
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSED_KEY) === "1";
@@ -152,19 +168,19 @@ export function DashboardShell({
 
   if (!copilotEnabled) {
     return (
-      <div data-browse-pane className="h-[calc(100vh-3rem)] w-full overflow-y-auto bg-background">
+      <div data-browse-pane className="h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] w-full overflow-y-auto bg-background">
         {children}
       </div>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] w-full flex-col overflow-hidden bg-[linear-gradient(to_bottom,var(--background),color-mix(in_oklch,var(--background)_92%,var(--muted)_8%))] lg:flex-row">
+    <div className="flex h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] min-h-0 w-full flex-col overflow-hidden bg-[linear-gradient(to_bottom,var(--background),color-mix(in_oklch,var(--background)_92%,var(--muted)_8%))] lg:flex-row">
 
       <div
         data-browse-pane
         className={cn(
-          "min-w-0 overflow-y-auto bg-background/72 lg:flex-1",
+          "min-h-0 min-w-0 overscroll-contain overflow-y-auto bg-background/72 lg:flex-1",
           mobileTab === "browse" ? "flex-1" : "hidden lg:block",
         )}
       >
@@ -179,7 +195,7 @@ export function DashboardShell({
 
       <aside
         className={cn(
-          "bg-card/70 shadow-2xl shadow-black/10 backdrop-blur",
+          "min-h-0 overflow-hidden bg-card/70 shadow-2xl shadow-black/10 backdrop-blur",
           mobileTab === "chat" ? "flex flex-1 flex-col" : "hidden",
           "lg:flex lg:flex-none lg:shrink-0 lg:flex-row",
         )}
