@@ -1,107 +1,83 @@
 import Link from "next/link";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, Clock3 } from "lucide-react";
 
 import { Button } from "../ui/button";
 
-const FREE_FEATURES = [
-  "Search every YC company",
-  "Full company and founder profiles",
-  "Similarity graph",
-  "Ask-YC: chat with citations",
-  "Batch trends and analytics",
+const INCLUDED = [
+  "Search every YC company and batch",
+  "Ask questions with cited company cards",
+  "Open founder and vendor intelligence",
+  "Use table, graph, and analytics views",
+  "Save your question through signup",
 ];
 
-const PRO_FEATURES = [
-  "Saved searches + alerts",
-  "CSV exports",
-  "API access",
-  "Batch change notifications",
-  "Priority Ask-YC chat",
-];
+const LATER = ["Saved searches", "Team alerts", "CSV exports", "API access"];
 
 export function PricingTeaser() {
   return (
     <section id="pricing" className="relative mx-auto w-full max-w-[1280px] px-4 py-20 sm:px-6 lg:px-8">
-      <div className="max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Pricing</p>
-        <h2 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
-          Free while we&apos;re in beta.
-        </h2>
-        <p className="mt-4 text-lg text-muted-foreground">
-          Sign up today, use everything. We&apos;ll add a Pro tier later for teams who want
-          exports, alerts, and API access.
-        </p>
-      </div>
+      <div className="grid gap-8 rounded-lg border border-border/55 bg-card/55 p-6 sm:p-8 lg:grid-cols-[1fr_420px] lg:p-10">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/85">
+            Beta access
+          </p>
+          <h2 className="mt-3 max-w-2xl text-4xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
+            Start with the full product while it is free.
+          </h2>
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-muted-foreground">
+            Create an account and use the search, chat, graph, company profiles, founders, vendors,
+            and analytics together. No credit card required.
+          </p>
 
-      <div className="mt-12 grid gap-4 md:grid-cols-2">
-        <div className="relative overflow-hidden rounded-3xl border border-primary/40 bg-card/60 p-8">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -right-12 -top-12 size-60 rounded-full bg-primary/20 blur-3xl"
-          />
-          <div className="relative">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 className="text-2xl font-semibold text-foreground">Beta access</h3>
-              <span className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-primary">
-                Now
-              </span>
-            </div>
-            <p className="mt-2 text-5xl font-semibold tracking-[-0.04em] text-foreground">
-              Free
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Everything, no limits. Just sign up.
-            </p>
-
-            <ul className="mt-6 space-y-2.5 text-sm">
-              {FREE_FEATURES.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-foreground/90">
-                  <Check className="mt-0.5 size-4 shrink-0 text-primary" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-
-            <Button asChild size="lg" className="mt-8 w-full rounded-full">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button asChild size="lg" className="rounded-full">
               <Link href="/sign-up">
-                Get started free
+                Start exploring free
                 <ArrowRight className="size-4" />
               </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="rounded-full">
+              <Link href="/sign-in">Sign in</Link>
             </Button>
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-card/40 p-8">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-2xl font-semibold text-foreground">Pro</h3>
-            <span className="rounded-full border border-border/60 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Coming soon
+        <div className="rounded-lg border border-border/55 bg-background/65 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Included now</p>
+              <p className="text-xs text-muted-foreground">Full beta access</p>
+            </div>
+            <span className="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+              Free
             </span>
           </div>
-          <p className="mt-2 text-5xl font-semibold tracking-[-0.04em] tabular-nums text-muted-foreground">
-            $—
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            For teams, researchers, and heavy users.
-          </p>
 
-          <ul className="mt-6 space-y-2.5 text-sm">
-            {PRO_FEATURES.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-muted-foreground">
-                <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground/60" />
+          <ul className="mt-5 space-y-2.5 text-sm">
+            {INCLUDED.map((item) => (
+              <li key={item} className="flex items-start gap-2 text-foreground/90">
+                <Check className="mt-0.5 size-4 shrink-0 text-primary" />
                 <span>{item}</span>
               </li>
             ))}
           </ul>
 
-          <Button
-            disabled
-            size="lg"
-            variant="outline"
-            className="mt-8 w-full rounded-full"
-          >
-            Pro — coming soon
-          </Button>
+          <div className="mt-6 border-t border-border/45 pt-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Clock3 className="size-4 text-primary" />
+              Pro later
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {LATER.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-md border border-border/55 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>

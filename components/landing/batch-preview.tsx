@@ -90,7 +90,7 @@ export async function BatchPreview() {
           See what&apos;s inside
         </p>
         <h2 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
-          Browse YC&apos;s latest batch — {batch}.
+          Browse YC&apos;s latest batch: {batch}.
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">
           {rowsInBatch} companies just landed. Have a look, then sign up to search every batch
@@ -98,7 +98,7 @@ export async function BatchPreview() {
         </p>
       </div>
 
-      <div className="relative mt-10 overflow-hidden rounded-3xl border border-border/50 bg-card/40">
+      <div className="relative mt-10 overflow-hidden rounded-lg border border-border/50 bg-card/40">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="border-b border-border/40 bg-card/60 text-xs uppercase tracking-[0.16em] text-muted-foreground">
@@ -143,7 +143,7 @@ export async function BatchPreview() {
                   <td className="px-6 py-4 text-muted-foreground">
                     <span className="line-clamp-2 max-w-md">{row.one_liner}</span>
                   </td>
-                  <td className="px-6 py-4 text-muted-foreground">{row.industry ?? "—"}</td>
+                  <td className="px-6 py-4 text-muted-foreground">{row.industry ?? "Uncategorized"}</td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
                       {row.batch}

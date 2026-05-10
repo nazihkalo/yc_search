@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 
-import { initializeDatabase } from "../../../lib/db";
+import { hasDatabaseUrl, initializeDatabase } from "../../../lib/db";
 import { getFacets } from "../../../lib/search";
 
 export async function GET() {
   try {
+    if (!hasDatabaseUrl()) {
+      return NextResponse.json({
+        tags: [],
+        industries: [],
+        batches: [],
+        regions: [],
+        stages: [],
+        years: [],
+        sources: [],
+      });
+    }
+
     await initializeDatabase();
     const facets = await getFacets();
     return NextResponse.json(facets);

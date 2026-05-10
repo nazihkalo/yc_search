@@ -14,6 +14,8 @@ import {
   type CompanyChatCardData,
   type CompanyDetailChatData,
   type FounderShowcaseFounder,
+  VendorAnalyticsList,
+  type VendorAnalyticsChatData,
 } from "./chat-cards";
 import { Badge } from "../ui/badge";
 
@@ -52,6 +54,7 @@ export type DashboardBridgeState = {
   sort: SortOption;
   view: ResultsView;
   activeTab: DashboardTab;
+  vendorCategory: string;
   graphOpen: boolean;
   totalResults: number;
   visibleCompanies: VisibleCompany[];
@@ -73,6 +76,7 @@ export type DashboardBridgeSetters = {
   setSort: (v: SortOption) => void;
   setView: (v: ResultsView) => void;
   setActiveTab: (v: DashboardTab) => void;
+  setVendorCategory: (v: string) => void;
   setGraphOpen: (v: boolean) => void;
   setSelectedCompanyId: (v: number | null) => void;
   setHighlightCompanyId: (v: number | null) => void;
@@ -161,6 +165,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       sort: state.sort,
       view: state.view,
       activeTab: state.activeTab,
+      vendorCategory: state.vendorCategory,
       totalResults: state.totalResults,
     },
   });
@@ -177,7 +182,8 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       "Available filter values (top facets by company count). When applying filters via " +
       "searchCompanies, prefer exact matches against these lists. If the user's request doesn't " +
       "match any facet (e.g. 'sleep tech', 'agentic accounting'), pass it as the free-text query " +
-      "instead — the search runs hybrid keyword + semantic over the whole index.",
+      "instead. For questions about tools, vendors, subprocessors, tech stacks, or vendor popularity, " +
+      "call lookupVendors instead of searchCompanies.",
     value: pickFacetSnapshot(state.facets),
   });
 
@@ -495,6 +501,182 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           summary={status === "complete" ? "view switched" : "switching…"}
         />
       ),
+    },
+    [],
+  );
+
+  useCopilotAction(
+    {
+      name: "lookupVendors",
+      description:
+        "Fetch evidence-backed vendor analytics for the current company set or a filtered company scope. " +
+        "Use this for questions like 'What are the most popular vendors?', 'Which auth vendors show up?', " +
+        "'What tools are used by healthcare companies?', or any question about subprocessors, vendors, " +
+        "technology providers, or stack patterns. This returns top vendors, categories, relationship counts, " +
+        "and source coverage.",
+      parameters: [
+        {
+          name: "query",
+          type: "string",
+          description:
+            "Optional free-text company scope, such as 'healthcare billing' or 'developer tools'. Omit to use current dashboard scope.",
+          required: false,
+        },
+        {
+          name: "category",
+          type: "string",
+          description:
+            "Optional vendor category filter, such as 'auth', 'infrastructure', 'payments', 'analytics', 'crm', or 'other'.",
+          required: false,
+        },
+        {
+          name: "topN",
+          type: "number",
+          description: "Number of top vendors to return. Default 12, max 50.",
+          required: false,
+        },
+        {
+          name: "tags",
+          type: "string[]",
+          description: "Optional company tag filters.",
+          required: false,
+        },
+        {
+          name: "industries",
+          type: "string[]",
+          description: "Optional company industry filters.",
+          required: false,
+        },
+        {
+          name: "sources",
+          type: "string[]",
+          description: "Optional source filters: 'yc' or 'forbes_ai50'.",
+          required: false,
+        },
+        {
+          name: "useCurrentFilters",
+          type: "boolean",
+          description:
+            "If true or omitted, merge with the user's current dashboard filters. If false, only use filters passed to this tool.",
+          required: false,
+        },
+      ],
+      handler: async (args) => {
+        try {
+          const { query, category, topN, tags, industries, sources, useCurrentFilters } = args as {
+            query?: string;
+            category?: string;
+            topN?: number;
+            tags?: string[];
+            industries?: string[];
+            sources?: string[];
+            useCurrentFilters?: boolean;
+          };
+          const s = stateRef.current;
+          const set = settersRef.current;
+          const useCurrent = useCurrentFilters !== false;
+          const params = new URLSearchParams();
+
+          const nextQuery = query ?? (useCurrent ? s.query : "");
+          if (nextQuery) params.set("q", nextQuery);
+          const nextTags = tags ?? (useCurrent ? s.tags : []);
+          const nextIndustries = industries ?? (useCurrent ? s.industries : []);
+          const nextSources = sources ?? (useCurrent ? s.sources : []);
+          if (nextTags.length) params.set("tags", nextTags.join(","));
+          if (nextIndustries.length) params.set("industries", nextIndustries.join(","));
+          if (nextSources.length) params.set("sources", nextSources.join(","));
+          if (useCurrent) {
+            if (s.batches.length) params.set("batches", s.batches.join(","));
+            if (s.stages.length) params.set("stages", s.stages.join(","));
+            if (s.regions.length) params.set("regions", s.regions.join(","));
+            if (s.years.length) params.set("years", s.years.join(","));
+            if (s.isHiring) params.set("isHiring", "1");
+            if (s.nonprofit) params.set("nonprofit", "1");
+            if (s.topCompany) params.set("topCompany", "1");
+          }
+          if (category) params.set("vendorCategory", category);
+          params.set("topN", String(Math.max(1, Math.min(50, topN ?? 12))));
+          params.set("page", "1");
+          params.set("pageSize", "25");
+
+          set.setActiveTab("vendors");
+          if (category !== undefined) set.setVendorCategory(category);
+          if (query !== undefined) set.setQuery(query);
+          if (tags !== undefined) set.setTags(tags);
+          if (industries !== undefined) set.setIndustries(industries);
+          if (sources !== undefined) set.setSources(sources);
+
+          const res = await fetch(`/api/vendors?${params.toString()}`);
+          if (!res.ok) {
+            return JSON.stringify({ error: `lookupVendors failed (${res.status})` });
+          }
+          const payload = await res.json();
+          return JSON.stringify({
+            query: nextQuery,
+            category: category ?? "",
+            analytics: payload,
+          });
+        } catch (error) {
+          return JSON.stringify({
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      },
+      render: ({ status, args, result }) => {
+        const argRecord = (args ?? {}) as Record<string, unknown>;
+        const trace = (
+          <ToolCallTrace
+            name="lookupVendors"
+            status={status}
+            args={argRecord}
+            summary={
+              status === "complete"
+                ? (() => {
+                    const parsed = parseToolResult<{ analytics?: VendorAnalyticsChatData }>(result);
+                    const n = parsed?.analytics?.topVendors?.length ?? 0;
+                    return `${n} vendor${n === 1 ? "" : "s"}`;
+                  })()
+                : "looking up…"
+            }
+          />
+        );
+        if (status !== "complete") {
+          return (
+            <div className="my-2 flex flex-col">
+              {trace}
+              <div className="rounded-lg border border-dashed border-border/50 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+                Looking up vendor intelligence…
+              </div>
+            </div>
+          );
+        }
+        const parsed = parseToolResult<{
+          query?: string;
+          category?: string;
+          analytics?: VendorAnalyticsChatData;
+          error?: string;
+        }>(result);
+        if (!parsed || parsed.error || !parsed.analytics) {
+          return (
+            <div className="my-2 flex flex-col">
+              {trace}
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {parsed?.error ?? "Vendor lookup failed."}
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="my-2 flex flex-col">
+            {trace}
+            <VendorAnalyticsList
+              analytics={parsed.analytics}
+              category={parsed.category}
+              query={parsed.query}
+            />
+          </div>
+        );
+      },
     },
     [],
   );

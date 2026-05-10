@@ -114,7 +114,7 @@ export function DataTable({
     <div
       data-slot="table-container"
       className={cn(
-        "relative w-full overflow-auto rounded-lg border",
+        "relative w-full overflow-auto rounded-lg border border-border/60",
         // Custom scrollbar styling to match ScrollArea aesthetic
         // Scrollbar visible but subtle by default, more prominent on hover
         "[&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5",

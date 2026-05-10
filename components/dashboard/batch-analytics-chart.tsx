@@ -19,10 +19,10 @@ const SERIES_COLORS = [
   "var(--chart-3)",
   "var(--chart-4)",
   "var(--chart-5)",
-  "#8b5cf6",
-  "#06b6d4",
-  "#f97316",
-  "#22c55e",
+  "color-mix(in oklch, var(--chart-1) 72%, var(--chart-3))",
+  "color-mix(in oklch, var(--chart-2) 72%, var(--chart-5))",
+  "color-mix(in oklch, var(--chart-4) 70%, var(--chart-1))",
+  "color-mix(in oklch, var(--chart-3) 72%, var(--chart-2))",
 ];
 
 function formatBatchTickLabel(batch: string) {
@@ -80,16 +80,25 @@ export function BatchAnalyticsChart({
             axisLine={false}
             tickLine={false}
           />
-          <YAxis allowDecimals={false} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} axisLine={false} />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+          />
           <Tooltip
             contentStyle={{
-              borderRadius: 16,
+              borderRadius: 8,
               border: "1px solid color-mix(in oklch, var(--border) 80%, transparent)",
-              background: "color-mix(in oklch, var(--card) 96%, transparent)",
+              background: "var(--popover)",
               color: "var(--foreground)",
+              boxShadow: "0 18px 45px color-mix(in oklch, var(--foreground) 12%, transparent)",
             }}
+            labelStyle={{ color: "var(--foreground)" }}
+            itemStyle={{ color: "var(--foreground)" }}
           />
           <Legend
+            wrapperStyle={{ color: "var(--muted-foreground)" }}
             onClick={(entry: { dataKey?: unknown; value?: string | number }) => {
               const dataKey =
                 typeof entry.dataKey === "string" || typeof entry.dataKey === "number" ? entry.dataKey : undefined;

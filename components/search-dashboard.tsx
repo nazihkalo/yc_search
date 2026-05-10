@@ -5,11 +5,16 @@ import Link from "next/link";
 import {
   ArrowUpRight,
   BarChart3,
+  Bot,
   Building2,
+  CircleDot,
+  Database,
+  Filter,
   LayoutGrid,
   Network,
   Rows3,
   Search,
+  Sparkles,
   TableProperties,
   X,
 } from "lucide-react";
@@ -83,7 +88,11 @@ const ALL_TABLE_COLUMNS: Array<{ key: TableColumnKey; label: string }> = [
   { key: "location", label: "Location" },
   { key: "launched_year", label: "Launched year" },
 ];
-const SEARCH_CACHE_PREFIX = "yc-search:results:";
+const DEFAULT_SOURCE_OPTIONS = [
+  { value: "yc", label: "YC", count: 0 },
+  { value: "forbes_ai50", label: "Forbes AI 50", count: 0 },
+];
+const SEARCH_CACHE_PREFIX = "yc-search:results:v2:";
 
 function parseCsv(value: string | null) {
   if (!value) {
@@ -444,6 +453,10 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
 
     const params = new URLSearchParams(baseQueryString);
     params.set("topN", "50");
+    if (query.trim()) {
+      params.set("vendorQuery", query.trim());
+      params.delete("q");
+    }
     setVendorAnalyticsLoading(true);
 
     fetch(`/api/vendors?${params.toString()}`)
@@ -460,7 +473,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
         setVendorAnalyticsError(message);
       })
       .finally(() => setVendorAnalyticsLoading(false));
-  }, [activeTab, baseQueryString]);
+  }, [activeTab, baseQueryString, query]);
 
   function toggleArrayValue<T extends string | number>(
     value: T,
@@ -489,9 +502,14 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     toggleArrayValue(batch, batches, setBatches);
   }
 
-  function setSourceFilter(source: string | null) {
+  function toggleSourceFilter(source: string) {
     setPage(1);
-    setSources(source ? [source] : []);
+    toggleArrayValue(source, sources, setSources);
+  }
+
+  function clearSourceFilters() {
+    setPage(1);
+    setSources([]);
   }
 
   function handleLegendDrilldown(clickedSeries: string | number | undefined) {
@@ -630,7 +648,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     ...sources.map((value) => ({
       key: `source-${value}`,
       label: sourceLabel(value),
-      onRemove: () => setSourceFilter(null),
+      onRemove: () => toggleSourceFilter(value),
     })),
     ...(activeTab === "vendors" && vendorCategory
       ? [
@@ -681,101 +699,135 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
         ]
       : []),
   ];
+  const visibleCount = results.results.length;
+  const queryScopeLabel = activeTab === "vendors"
+    ? query.trim()
+      ? `Vendor search: ${query.trim()}`
+      : "All vendors"
+    : query.trim()
+      ? query.trim()
+      : "All indexed companies";
+  const searchPlaceholder = activeTab === "vendors"
+    ? "Search vendors by name, domain, or category"
+    : "Search companies by name, idea, founder, market, or vendor";
+  const primaryMetricLabel = activeTab === "vendors" ? "Vendors" : "Matched";
+  const primaryMetricValue = activeTab === "vendors"
+    ? (vendorAnalytics?.topVendors.length ?? 0).toLocaleString()
+    : results.total.toLocaleString();
+  const browseProgressLabel = activeTab === "vendors"
+    ? `${(vendorAnalytics?.totalRelationships ?? 0).toLocaleString()} relationships`
+    : view === "table"
+      ? `${results.page} / ${totalPages} pages`
+      : `${visibleCount.toLocaleString()} loaded`;
+  const activeTabLabel =
+    activeTab === "results" ? "Results" : activeTab === "analytics" ? "Analytics" : "Vendors";
+  const sourceOptions = facets?.sources.length
+    ? facets.sources.map((source) => ({
+        value: source.value,
+        label: sourceLabel(source.value),
+        count: source.count,
+      }))
+    : DEFAULT_SOURCE_OPTIONS;
 
   return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div className="w-full px-3 py-4 sm:px-5 lg:px-6">
       {copilotEnabled ? (
-      <DashboardCopilotBridge
-        state={{
-          query,
-          tags,
-          industries,
-          batches,
-          stages,
-          regions,
-          years,
-          sources,
-          isHiring,
-          nonprofit,
-          topCompany,
-          sort,
-          view,
-          activeTab,
-          graphOpen,
-          totalResults: results.total,
-          visibleCompanies: results.results.slice(0, 30).map((row) => ({
-            id: row.id,
-            name: row.name,
-            batch: row.batch,
-            oneLiner: row.one_liner,
-          })),
-          facets: facets
-            ? {
-                tags: facets.tags,
-                industries: facets.industries,
-                batches: facets.batches,
-                stages: facets.stages,
-                regions: facets.regions,
-                sources: facets.sources,
-              }
-            : null,
-        }}
-        setters={{
-          setQuery: (q) => {
-            setPage(1);
-            setQuery(q);
-          },
-          setTags: (v) => {
-            setPage(1);
-            setTags(v);
-          },
-          setIndustries: (v) => {
-            setPage(1);
-            setIndustries(v);
-          },
-          setBatches: (v) => {
-            setPage(1);
-            setBatches(v);
-          },
-          setStages: (v) => {
-            setPage(1);
-            setStages(v);
-          },
-          setRegions: (v) => {
-            setPage(1);
-            setRegions(v);
-          },
-          setSources: (v) => {
-            setPage(1);
-            setSources(v);
-          },
-          setYears: (v) => {
-            setPage(1);
-            setYears(v);
-          },
-          setIsHiring: (v) => {
-            setPage(1);
-            setIsHiring(v);
-          },
-          setNonprofit: (v) => {
-            setPage(1);
-            setNonprofit(v);
-          },
-          setTopCompany: (v) => {
-            setPage(1);
-            setTopCompany(v);
-          },
-          setSort: (v) => {
-            setPage(1);
-            setSort(v);
-          },
-          setView,
-          setActiveTab,
-          setGraphOpen,
-          setSelectedCompanyId,
-          setHighlightCompanyId,
-        }}
-      />
+        <DashboardCopilotBridge
+          state={{
+            query,
+            tags,
+            industries,
+            batches,
+            stages,
+            regions,
+            years,
+            sources,
+            isHiring,
+            nonprofit,
+            topCompany,
+            sort,
+            view,
+            activeTab,
+            vendorCategory,
+            graphOpen,
+            totalResults: results.total,
+            visibleCompanies: results.results.slice(0, 30).map((row) => ({
+              id: row.id,
+              name: row.name,
+              batch: row.batch,
+              oneLiner: row.one_liner,
+            })),
+            facets: facets
+              ? {
+                  tags: facets.tags,
+                  industries: facets.industries,
+                  batches: facets.batches,
+                  stages: facets.stages,
+                  regions: facets.regions,
+                  sources: facets.sources,
+                }
+              : null,
+          }}
+          setters={{
+            setQuery: (q) => {
+              setPage(1);
+              setQuery(q);
+            },
+            setTags: (v) => {
+              setPage(1);
+              setTags(v);
+            },
+            setIndustries: (v) => {
+              setPage(1);
+              setIndustries(v);
+            },
+            setBatches: (v) => {
+              setPage(1);
+              setBatches(v);
+            },
+            setStages: (v) => {
+              setPage(1);
+              setStages(v);
+            },
+            setRegions: (v) => {
+              setPage(1);
+              setRegions(v);
+            },
+            setSources: (v) => {
+              setPage(1);
+              setSources(v);
+            },
+            setYears: (v) => {
+              setPage(1);
+              setYears(v);
+            },
+            setIsHiring: (v) => {
+              setPage(1);
+              setIsHiring(v);
+            },
+            setNonprofit: (v) => {
+              setPage(1);
+              setNonprofit(v);
+            },
+            setTopCompany: (v) => {
+              setPage(1);
+              setTopCompany(v);
+            },
+            setSort: (v) => {
+              setPage(1);
+              setSort(v);
+            },
+            setView,
+            setActiveTab,
+            setVendorCategory: (v) => {
+              setPage(1);
+              setVendorCategory(v);
+            },
+            setGraphOpen,
+            setSelectedCompanyId,
+            setHighlightCompanyId,
+          }}
+        />
       ) : null}
 
       {selectedCompanyId !== null ? (
@@ -799,61 +851,116 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
         </div>
       ) : null}
       <div className="contents">
+      <div className="space-y-5">
+        <section className="overflow-hidden rounded-lg border border-border/60 bg-card/80 shadow-sm shadow-black/10">
+          <div className="flex flex-col gap-4 p-4 sm:p-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                <CircleDot className="size-3.5 text-primary" />
+                Command center
+              </div>
+              <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                Startup intelligence workspace
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Company, founder, vendor, and category signals in one research surface.
+              </p>
+            </div>
 
-      <div className="space-y-6">
-        {/* Search bar */}
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={draftQuery}
-            onChange={(e) => setDraftQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const v = draftQuery.trim();
-                queryRef.current = v;
-                setPage(1);
-                setQuery(v);
-                setDraftQuery(v);
-              }
-              if (e.key === "Escape") {
-                queryRef.current = "";
-                setPage(1);
-                setQuery("");
-                setDraftQuery("");
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            placeholder="Search companies by name, idea, or description…"
-            className="w-full rounded-full border border-border/70 bg-background/70 py-2.5 pl-10 pr-9 text-sm placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          {draftQuery ? (
-            <button
-              type="button"
-              onClick={() => {
-                queryRef.current = "";
-                setPage(1);
-                setQuery("");
-                setDraftQuery("");
-              }}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
-              aria-label="Clear search"
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
+            <div className="grid overflow-hidden rounded-lg border border-border/60 bg-background/45 sm:min-w-[460px] sm:grid-cols-3">
+              <DashboardMetric
+                icon={<Database className="size-3.5" />}
+                label={primaryMetricLabel}
+                value={primaryMetricValue}
+              />
+              <DashboardMetric
+                icon={<Filter className="size-3.5" />}
+                label="Filters"
+                value={activeFilters.length.toLocaleString()}
+              />
+              <DashboardMetric
+                icon={<Bot className="size-3.5" />}
+                label="View"
+                value={activeTabLabel}
+              />
+            </div>
+          </div>
 
-        <SourceFilterStrip selectedSources={sources} onSelectSource={setSourceFilter} />
+          <div className="border-t border-border/60 bg-background/35 p-3 sm:p-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={draftQuery}
+                  onChange={(e) => setDraftQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const v = draftQuery.trim();
+                      queryRef.current = v;
+                      setPage(1);
+                      setQuery(v);
+                      setDraftQuery(v);
+                    }
+                    if (e.key === "Escape") {
+                      queryRef.current = "";
+                      setPage(1);
+                      setQuery("");
+                      setDraftQuery("");
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  placeholder={searchPlaceholder}
+                  className="h-12 w-full rounded-md border border-border/70 bg-background/80 py-2 pl-10 pr-9 text-base text-foreground shadow-inner shadow-black/5 placeholder:text-muted-foreground/55 focus:border-primary/45 focus:outline-none focus:ring-2 focus:ring-ring/35"
+                />
+                {draftQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      queryRef.current = "";
+                      setPage(1);
+                      setQuery("");
+                      setDraftQuery("");
+                    }}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="size-4" />
+                  </button>
+                ) : null}
+              </div>
+
+              <SourceTagFilters
+                options={sourceOptions}
+                selectedSources={sources}
+                onToggleSource={toggleSourceFilter}
+                onClearSources={clearSourceFilters}
+              />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2.5 py-1">
+                <Sparkles className="size-3.5 text-primary" />
+                {queryScopeLabel}
+              </span>
+              <span className="rounded-md bg-muted/60 px-2.5 py-1">
+                {browseProgressLabel}
+              </span>
+            </div>
+          </div>
+        </section>
 
         {activeFilters.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              Active filters
+            </span>
             {activeFilters.map((filter) => (
               <button
                 key={filter.key}
                 type="button"
                 onClick={filter.onRemove}
-                className="rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                className="rounded-md border border-border/70 bg-background/70 px-3 py-1.5 text-sm text-muted-foreground transition hover:border-primary/35 hover:text-foreground"
               >
                 {filter.label} ×
               </button>
@@ -861,32 +968,47 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
           </div>
         ) : null}
 
-        <SplitLayout
-          graphOpen={graphOpen}
-          graphRatio={graphRatio}
-          onGraphRatioChange={setGraphRatio}
-          onCloseGraph={() => setGraphOpen(false)}
-          baseQueryString={baseQueryString}
-          returnToPath={returnToPath}
-          highlightCompanyId={highlightCompanyId}
-          onGraphNodeClick={(node: GraphNode) => {
-            setSelectedCompanyId(node.id);
-            setHighlightCompanyId(null);
-          }}
-        >
+        <DashboardTabStrip activeTab={activeTab} onActiveTabChange={setActiveTab} />
+
+        {activeTab === "vendors" ? (
+          <VendorAnalyticsPanel
+            analytics={vendorAnalytics}
+            isLoading={vendorAnalyticsLoading}
+            error={vendorAnalyticsError}
+            selectedCategory={vendorCategory}
+            returnToPath={`/dashboard?${baseQueryString}`}
+            onCategoryChange={(nextCategory) => {
+              setPage(1);
+              setVendorCategory(nextCategory);
+            }}
+          />
+        ) : (
+          <SplitLayout
+            graphOpen={graphOpen}
+            graphRatio={graphRatio}
+            onGraphRatioChange={setGraphRatio}
+            onCloseGraph={() => setGraphOpen(false)}
+            baseQueryString={baseQueryString}
+            returnToPath={returnToPath}
+            highlightCompanyId={highlightCompanyId}
+            onGraphNodeClick={(node: GraphNode) => {
+              setSelectedCompanyId(node.id);
+              setHighlightCompanyId(null);
+            }}
+          >
         {activeTab === "results" ? (
-          <section className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <section className="space-y-3">
+            <div className="flex flex-col gap-3 rounded-lg border border-border/55 bg-card/60 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-medium">{results.total.toLocaleString()} companies</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-base font-semibold tracking-tight">{results.total.toLocaleString()} companies</p>
+                <p className="text-sm text-muted-foreground">
                   {view === "cards"
                     ? `${results.results.length.toLocaleString()} loaded`
                     : `Hybrid search, page ${results.page} of ${totalPages}`}
                 </p>
               </div>
               {view === "cards" ? (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   {results.results.length < results.total ? "Scroll to load more" : "All matching cards loaded"}
                 </div>
               ) : null}
@@ -901,8 +1023,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
             ) : view === "cards" ? (
               <>
                 <ResultsControlStrip
-                  activeTab={activeTab}
-                  onActiveTabChange={setActiveTab}
                   sort={sort}
                   onSortChange={(nextSort) => {
                     setPage(1);
@@ -991,8 +1111,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
                 selectedYears={years}
                 toolbarPrefix={
                   <ResultsControlStrip
-                    activeTab={activeTab}
-                    onActiveTabChange={setActiveTab}
                     sort={sort}
                     onSortChange={(nextSort) => {
                       setPage(1);
@@ -1007,13 +1125,13 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
               />
             )}
           </section>
-        ) : activeTab === "analytics" ? (
-          <section className="space-y-6">
-            <Card className="border-border/70 bg-card/95">
+        ) : (
+          <section className="space-y-5">
+            <Card className="rounded-lg border-border/60 bg-card/85">
               <CardHeader className="pb-4">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <CardTitle className="text-base">Batch analytics</CardTitle>
+                    <CardTitle className="text-lg">Batch analytics</CardTitle>
                     <CardDescription>
                       Charts live here so the main results view stays search-first and table-first.
                     </CardDescription>
@@ -1065,15 +1183,15 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
             </Card>
 
             <div className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-lg border border-border/55 bg-card/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-medium">Filtered results</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-base font-semibold tracking-tight">Filtered results</p>
+                  <p className="text-sm text-muted-foreground">
                     Keep chart drilldowns and table browsing in one secondary workspace.
                   </p>
                 </div>
                 {view === "cards" ? (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     {results.results.length.toLocaleString()} of {results.total.toLocaleString()} loaded
                   </div>
                 ) : null}
@@ -1084,8 +1202,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
               ) : view === "cards" ? (
                 <>
                   <ResultsControlStrip
-                    activeTab={activeTab}
-                    onActiveTabChange={setActiveTab}
                     sort={sort}
                     onSortChange={(nextSort) => {
                       setPage(1);
@@ -1174,128 +1290,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
                   selectedYears={years}
                   toolbarPrefix={
                     <ResultsControlStrip
-                      activeTab={activeTab}
-                      onActiveTabChange={setActiveTab}
-                      sort={sort}
-                      onSortChange={(nextSort) => {
-                        setPage(1);
-                        setSort(nextSort);
-                      }}
-                      view={view}
-                      onViewChange={setView}
-                      graphOpen={graphOpen}
-                      onToggleGraph={() => setGraphOpen((open) => !open)}
-                    />
-                  }
-                />
-              )}
-            </div>
-
-          </section>
-        ) : (
-          <section className="space-y-6">
-            <VendorAnalyticsPanel
-              analytics={vendorAnalytics}
-              isLoading={vendorAnalyticsLoading}
-              error={vendorAnalyticsError}
-              selectedCategory={vendorCategory}
-              returnToPath={`/dashboard?${baseQueryString}`}
-              onCategoryChange={(nextCategory) => {
-                setPage(1);
-                setVendorCategory(nextCategory);
-              }}
-            />
-
-            <div className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium">Filtered results</p>
-                  <p className="text-xs text-muted-foreground">
-                    Vendor filters share the same company result set.
-                  </p>
-                </div>
-              </div>
-
-              {resultsLoading && results.results.length === 0 ? (
-                <LoadingState label="Refreshing results..." />
-              ) : view === "cards" ? (
-                <ResultsCardGrid
-                  results={results.results}
-                  returnToPath={returnToPath}
-                  selectedTags={tags}
-                  selectedIndustries={industries}
-                  onToggleTag={addOrToggleTag}
-                  onToggleIndustry={addOrToggleIndustry}
-                />
-              ) : (
-                <ResultsNikoPreviewTable
-                  results={results.results}
-                  total={results.total}
-                  page={page}
-                  pageSize={results.pageSize}
-                  pageSizeOptions={TABLE_PAGE_SIZE_OPTIONS}
-                  returnToPath={returnToPath}
-                  sort={sort}
-                  visibleColumns={visibleTableColumns}
-                  selectedTags={tags}
-                  selectedIndustries={industries}
-                  selectedBatches={batches}
-                  selectedStages={stages}
-                  selectedRegions={regions}
-                  isHiring={isHiring}
-                  topCompany={topCompany}
-                  nonprofit={nonprofit}
-                  tagOptions={pickTopFacets(facets?.tags ?? [], 20)}
-                  industryOptions={pickTopFacets(facets?.industries ?? [], 16)}
-                  batchOptions={pickTopFacets(facets?.batches ?? [], 20)}
-                  stageOptions={pickTopFacets(facets?.stages ?? [], 12)}
-                  regionOptions={pickTopFacets(facets?.regions ?? [], 12)}
-                  isLoading={resultsLoading}
-                  onSortChange={(nextSort) => {
-                    setPage(1);
-                    setSort(nextSort);
-                  }}
-                  onPageChange={setPage}
-                  onPageSizeChange={(nextSize) => {
-                    setPage(1);
-                    setTablePageSize(nextSize);
-                  }}
-                  onVisibleColumnsChange={setVisibleTableColumns}
-                  onYearsChange={(nextYears) => {
-                    setPage(1);
-                    setYears(nextYears);
-                  }}
-                  onTagsChange={(nextTags) => {
-                    setPage(1);
-                    setTags(nextTags);
-                  }}
-                  onIndustriesChange={(nextIndustries) => {
-                    setPage(1);
-                    setIndustries(nextIndustries);
-                  }}
-                  onBatchesChange={(nextBatches) => {
-                    setPage(1);
-                    setBatches(nextBatches);
-                  }}
-                  onStagesChange={(nextStages) => {
-                    setPage(1);
-                    setStages(nextStages);
-                  }}
-                  onRegionsChange={(nextRegions) => {
-                    setPage(1);
-                    setRegions(nextRegions);
-                  }}
-                  onStatusFlagsChange={(nextStatus) => {
-                    setPage(1);
-                    setIsHiring(nextStatus.isHiring);
-                    setTopCompany(nextStatus.topCompany);
-                    setNonprofit(nextStatus.nonprofit);
-                  }}
-                  selectedYears={years}
-                  toolbarPrefix={
-                    <ResultsControlStrip
-                      activeTab={activeTab}
-                      onActiveTabChange={setActiveTab}
                       sort={sort}
                       onSortChange={(nextSort) => {
                         setPage(1);
@@ -1312,49 +1306,82 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
             </div>
           </section>
         )}
-        </SplitLayout>
+          </SplitLayout>
+        )}
       </div>
       </div>
     </div>
   );
 }
 
-function SourceFilterStrip({
+function SourceTagFilters({
+  options,
   selectedSources,
-  onSelectSource,
+  onToggleSource,
+  onClearSources,
 }: {
+  options: Array<{ value: string; label: string; count: number }>;
   selectedSources: string[];
-  onSelectSource: (source: string | null) => void;
+  onToggleSource: (source: string) => void;
+  onClearSources: () => void;
 }) {
-  const selected = selectedSources[0] ?? "all";
-  const options = [
-    { value: "all", label: "All" },
-    { value: "yc", label: "YC" },
-    { value: "forbes_ai50", label: "Forbes AI 50" },
-  ];
-
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        Source
-      </span>
-      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
-        {options.map((option) => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onClearSources}
+        className={cn(
+          "rounded-md border px-3 py-1.5 text-sm font-medium transition",
+          selectedSources.length === 0
+            ? "border-border/70 bg-secondary text-secondary-foreground"
+            : "border-border/60 bg-background/50 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        All sources
+      </button>
+      {options.map((option) => {
+        const selected = selectedSources.includes(option.value);
+        return (
           <button
             key={option.value}
             type="button"
-            onClick={() => onSelectSource(option.value === "all" ? null : option.value)}
+            onClick={() => onToggleSource(option.value)}
             className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition",
-              selected === option.value
-                ? "bg-secondary text-secondary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+              "rounded-md border px-3 py-1.5 text-sm font-medium transition",
+              selected
+                ? "border-primary/35 bg-primary/10 text-primary"
+                : "border-border/60 bg-background/50 text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}
+            {option.count > 0 ? (
+              <span className="ml-1.5 text-xs opacity-60">{option.count.toLocaleString()}</span>
+            ) : null}
           </button>
-        ))}
+        );
+      })}
+    </div>
+  );
+}
+
+function DashboardMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="border-b border-border/60 px-3.5 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="text-primary">{icon}</span>
+        {label}
       </div>
+      <p className="mt-1.5 truncate text-base font-semibold tracking-tight text-foreground">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1384,139 +1411,156 @@ function VendorAnalyticsPanel({
 
   if (!analytics || analytics.totalRelationships === 0) {
     return (
-      <Card className="border-border/70 bg-card/95">
-        <CardContent className="px-6 py-10 text-center">
-          <p className="text-sm font-medium">No vendor intelligence yet</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Run vendor enrichment to populate subprocessors and detected technologies.
+      <section className="space-y-3">
+        <div className="rounded-lg border border-border/60 bg-card/85 px-4 py-3">
+            <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
+              <Filter className="size-4 text-primary" />
+              Vendor directory
+            </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Category filtering will appear here once enrichment has detected vendors.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+        <Card className="rounded-lg border-border/60 bg-card/85">
+          <CardContent className="px-6 py-10 text-center">
+              <p className="text-base font-medium">No vendor intelligence yet</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Run vendor enrichment to populate subprocessors and detected technologies.
+            </p>
+          </CardContent>
+        </Card>
+      </section>
     );
   }
 
+  const selectedCategoryLabel = selectedCategory || "All categories";
+  const visibleVendorCount = analytics.topVendors.length;
+  const relationshipTypes = analytics.relationshipTypes.slice(0, 8);
+  const sourceKinds = analytics.sourceKinds.slice(0, 6);
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
-      <Card className="border-border/70 bg-card/95">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle className="text-base">Vendor directory</CardTitle>
-              <CardDescription>
-                {analytics.totalRelationships.toLocaleString()} evidence-backed relationships across{" "}
-                {analytics.totalCompanies.toLocaleString()} companies
-                {selectedCategory ? ` in ${selectedCategory}` : ""}.
-              </CardDescription>
+    <section className="space-y-3">
+      <div className="sticky top-16 z-30 rounded-lg border border-border/70 bg-card px-4 py-3 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-base font-semibold tracking-tight">Vendor directory</p>
+              <span className="rounded-md border border-border/60 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground">
+                {selectedCategoryLabel}
+              </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-right sm:min-w-44">
-              <div className="rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-lg font-semibold">{analytics.topVendors.length.toLocaleString()}</p>
-                <p className="text-[11px] text-muted-foreground">vendors shown</p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-lg font-semibold">{analytics.totalCompanies.toLocaleString()}</p>
-                <p className="text-[11px] text-muted-foreground">companies</p>
-              </div>
-            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {analytics.totalRelationships.toLocaleString()} evidence-backed relationships across{" "}
+              {analytics.totalCompanies.toLocaleString()} companies.
+            </p>
           </div>
+
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="min-w-0 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="mb-1 block">Vendor category</span>
+              <select
+                value={selectedCategory}
+                onChange={(event) => onCategoryChange(event.target.value)}
+                className="h-10 w-full min-w-0 rounded-md border border-border/70 bg-background px-3 text-sm font-normal normal-case tracking-normal text-foreground shadow-sm outline-none transition hover:border-border focus:border-primary/55 focus:ring-2 focus:ring-primary/15 sm:w-[280px]"
+              >
+                <option value="">All categories</option>
+                {analytics.categories.map((category) => (
+                  <option key={category.category} value={category.category}>
+                    {category.category} ({category.companyCount.toLocaleString()})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedCategory ? (
+              <button
+                type="button"
+                onClick={() => onCategoryChange("")}
+                className="h-10 rounded-md border border-border/70 px-3 text-sm font-medium text-muted-foreground transition hover:border-primary/35 hover:text-foreground"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
+            <p className="text-base font-semibold">{visibleVendorCount.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">vendors shown</p>
+          </div>
+          <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
+            <p className="text-base font-semibold">{analytics.totalCompanies.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">companies</p>
+          </div>
+          <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
+            <p className="text-base font-semibold">{analytics.totalRelationships.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">relationships</p>
+          </div>
+        </div>
+      </div>
+
+      <Card className="rounded-lg border-border/60 bg-card/85">
+        <CardHeader className="border-b border-border/55 pb-4">
+          <CardTitle className="text-lg">Vendors</CardTitle>
+          <CardDescription>
+            Browse tools and platforms detected in the current company set.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          {analytics.topVendors.map((vendor) => (
-            <Link
-              key={vendor.id}
-              href={`/vendors/${vendor.id}?returnTo=${encodeURIComponent(returnToPath)}`}
-              className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-background/50 px-3 py-3 transition hover:border-primary/40 hover:bg-background/80 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <VendorLogo name={vendor.name} domain={vendor.domain} size="md" />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-medium group-hover:text-primary">{vendor.name}</p>
-                    <span className="rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground">
-                      {vendor.category}
-                    </span>
+          {visibleVendorCount > 0 ? (
+            analytics.topVendors.map((vendor) => (
+              <Link
+                key={vendor.id}
+                href={`/vendors/${vendor.id}?returnTo=${encodeURIComponent(returnToPath)}`}
+                className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-background/50 px-3 py-3 transition hover:border-primary/40 hover:bg-background/80 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <VendorLogo name={vendor.name} domain={vendor.domain} size="md" />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-base font-medium group-hover:text-primary">{vendor.name}</p>
+                      <span className="rounded-md border border-border/70 px-2.5 py-1 text-xs text-muted-foreground">
+                        {vendor.category}
+                      </span>
+                    </div>
+                    {vendor.domain ? (
+                      <p className="mt-0.5 truncate text-sm text-muted-foreground">{vendor.domain}</p>
+                    ) : null}
                   </div>
-                  {vendor.domain ? (
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{vendor.domain}</p>
-                  ) : null}
                 </div>
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-muted-foreground sm:justify-end">
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-                  <Building2 className="size-3" />
-                  {vendor.companyCount.toLocaleString()}
-                </span>
-                {Object.entries(vendor.sourceCounts).map(([source, count]) => (
-                  <span key={`${vendor.id}-${source}`} className="rounded-full bg-muted px-2 py-0.5">
-                    {sourceLabel(source)} {count}
+                <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm text-muted-foreground sm:justify-end">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground">
+                    <Building2 className="size-3" />
+                    {vendor.companyCount.toLocaleString()}
                   </span>
-                ))}
-                <ArrowUpRight className="size-3.5 opacity-50 transition group-hover:opacity-100" />
-              </div>
-            </Link>
-          ))}
+                  {Object.entries(vendor.sourceCounts).map(([source, count]) => (
+                    <span key={`${vendor.id}-${source}`} className="rounded-md bg-muted px-2 py-0.5">
+                      {sourceLabel(source)} {count}
+                    </span>
+                  ))}
+                  <ArrowUpRight className="size-3.5 opacity-50 transition group-hover:opacity-100" />
+                </div>
+              </Link>
+            ))
+          ) : (
+            <div className="rounded-lg border border-border/60 bg-background/50 px-4 py-8 text-center">
+              <p className="text-base font-medium">No vendors match this category</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Clear the category filter to return to the full vendor directory.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <div className="space-y-4">
-        <Card className="border-border/70 bg-card/95">
-          <CardHeader className="pb-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Categories</CardTitle>
-                <CardDescription>Filter vendors by company coverage.</CardDescription>
-              </div>
-              {selectedCategory ? (
-                <button
-                  type="button"
-                  onClick={() => onCategoryChange("")}
-                  className="rounded-full border border-border/70 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <button
-              type="button"
-              onClick={() => onCategoryChange("")}
-              className={cn(
-                "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
-                selectedCategory
-                  ? "text-muted-foreground hover:bg-background/70 hover:text-foreground"
-                  : "bg-secondary text-secondary-foreground",
-              )}
-            >
-              <span>All categories</span>
-              <span className="font-medium">{selectedCategory ? "Reset" : analytics.topVendors.length.toLocaleString()}</span>
-            </button>
-            {analytics.categories.slice(0, 12).map((category) => (
-              <button
-                key={category.category}
-                type="button"
-                onClick={() => onCategoryChange(category.category)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
-                  selectedCategory === category.category
-                    ? "bg-secondary text-secondary-foreground"
-                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
-                )}
-              >
-                <span className="truncate">{category.category}</span>
-                <span className="font-medium">{category.companyCount.toLocaleString()}</span>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 bg-card/95">
-          <CardHeader className="pb-4">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Card className="rounded-lg border-border/60 bg-card/85">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Relationship types</CardTitle>
-            <CardDescription>How vendors were found in evidence.</CardDescription>
+            <CardDescription>How vendor evidence was classified.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {analytics.relationshipTypes.map((item) => (
+            {relationshipTypes.map((item) => (
               <div key={item.relationshipType} className="flex items-center justify-between gap-3 text-sm">
                 <span className="truncate text-muted-foreground">{item.relationshipType.replace(/_/g, " ")}</span>
                 <span className="font-medium">{item.companyCount.toLocaleString()}</span>
@@ -1524,8 +1568,23 @@ function VendorAnalyticsPanel({
             ))}
           </CardContent>
         </Card>
+
+        <Card className="rounded-lg border-border/60 bg-card/85">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Evidence sources</CardTitle>
+            <CardDescription>Source coverage for the current vendor set.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {sourceKinds.map((item) => (
+              <div key={item.sourceKind} className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate text-muted-foreground">{sourceLabel(item.sourceKind)}</span>
+                <span className="font-medium">{item.companyCount.toLocaleString()}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1547,7 +1606,7 @@ function SegmentedControl({
   return (
     <div
       className={cn(
-        "rounded-full border border-border/70 bg-background/70 p-1",
+        "rounded-md border border-border/70 bg-background/70 p-1",
         fullWidth
           ? useGridOnMobile
             ? "grid w-full grid-cols-2 gap-1 sm:inline-flex sm:w-auto"
@@ -1562,11 +1621,46 @@ function SegmentedControl({
           variant={option.value === value ? "secondary" : "ghost"}
           size={compact ? "sm" : "default"}
           onClick={() => onChange(option.value)}
-          className={cn("rounded-full", fullWidth && "w-full justify-center", !useGridOnMobile && fullWidth && "flex-1")}
+          className={cn("rounded-[0.4rem] text-sm", fullWidth && "w-full justify-center", !useGridOnMobile && fullWidth && "flex-1")}
         >
           {option.icon}
           {option.label}
         </Button>
+      ))}
+    </div>
+  );
+}
+
+function DashboardTabStrip({
+  activeTab,
+  onActiveTabChange,
+}: {
+  activeTab: DashboardTab;
+  onActiveTabChange: (next: DashboardTab) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/55 bg-card/55 p-1.5">
+      {(["results", "analytics", "vendors"] as DashboardTab[]).map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          onClick={() => onActiveTabChange(tab)}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition",
+            activeTab === tab
+              ? "bg-secondary text-secondary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
+          )}
+        >
+          {tab === "results" ? (
+            <Rows3 className="size-4" />
+          ) : tab === "analytics" ? (
+            <BarChart3 className="size-4" />
+          ) : (
+            <Network className="size-4" />
+          )}
+          {tab === "results" ? "Companies" : tab === "analytics" ? "Analytics" : "Vendors"}
+        </button>
       ))}
     </div>
   );
@@ -1727,14 +1821,14 @@ function SplitLayout({
           <div className="flex items-center justify-between border-b border-border/60 bg-background/70 px-3 py-2 backdrop-blur">
             <div className="flex items-center gap-2">
               <Network className="size-4 text-primary" />
-              <p className="text-xs font-semibold tracking-tight">Companies graph</p>
+              <p className="text-sm font-semibold tracking-tight">Companies graph</p>
             </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={cyclePreset}
                 title="Cycle width: 30 / 50 / 70%"
-                className="rounded-full border border-border/50 bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:text-foreground"
+                className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
               >
                 {Math.round(rightPercent)}%
               </button>
@@ -1763,8 +1857,6 @@ function SplitLayout({
 }
 
 function ResultsControlStrip({
-  activeTab,
-  onActiveTabChange,
   sort,
   onSortChange,
   view,
@@ -1772,8 +1864,6 @@ function ResultsControlStrip({
   graphOpen,
   onToggleGraph,
 }: {
-  activeTab: DashboardTab;
-  onActiveTabChange: (next: DashboardTab) => void;
   sort: SortOption;
   onSortChange: (next: SortOption) => void;
   view: ResultsView;
@@ -1782,55 +1872,26 @@ function ResultsControlStrip({
   onToggleGraph: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {/* Browse tabs */}
-      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
-        {(["results", "analytics", "vendors"] as DashboardTab[]).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => onActiveTabChange(tab)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition",
-              activeTab === tab
-                ? "bg-secondary text-secondary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab === "results" ? (
-              <Rows3 className="size-3" />
-            ) : tab === "analytics" ? (
-              <BarChart3 className="size-3" />
-            ) : (
-              <Network className="size-3" />
-            )}
-            {tab === "results" ? "Results" : tab === "analytics" ? "Analytics" : "Vendors"}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1" />
-
-      {/* Graph toggle — icon button */}
+    <div className="flex w-full flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={onToggleGraph}
         title={graphOpen ? "Hide graph" : "Show graph"}
         className={cn(
-          "inline-flex size-7 items-center justify-center rounded-full border transition",
+          "inline-flex size-9 items-center justify-center rounded-md border transition",
           graphOpen
             ? "border-primary/40 bg-primary/10 text-primary"
             : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
         )}
       >
-        <Network className="size-3.5" />
+        <Network className="size-4" />
       </button>
 
       {/* Sort */}
       <select
         value={sort}
         onChange={(e) => onSortChange(e.target.value as SortOption)}
-        className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className="h-9 rounded-md border border-border/70 bg-background/70 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       >
         <option value="relevance">Relevance</option>
         <option value="newest">Newest</option>
@@ -1838,8 +1899,7 @@ function ResultsControlStrip({
         <option value="name">Name</option>
       </select>
 
-      {/* View toggle — icon-only */}
-      <div className="inline-flex rounded-full border border-border/70 bg-background/70 p-0.5">
+      <div className="inline-flex rounded-md border border-border/70 bg-background/70 p-0.5">
         {(["table", "cards"] as ResultsView[]).map((v) => (
           <button
             key={v}
@@ -1847,13 +1907,13 @@ function ResultsControlStrip({
             onClick={() => onViewChange(v)}
             title={v === "table" ? "Table view" : "Card view"}
             className={cn(
-              "inline-flex size-6 items-center justify-center rounded-full transition",
+              "inline-flex size-8 items-center justify-center rounded-[0.4rem] transition",
               view === v
                 ? "bg-secondary text-secondary-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {v === "table" ? <TableProperties className="size-3" /> : <LayoutGrid className="size-3" />}
+            {v === "table" ? <TableProperties className="size-3.5" /> : <LayoutGrid className="size-3.5" />}
           </button>
         ))}
       </div>
@@ -1863,7 +1923,7 @@ function ResultsControlStrip({
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+    <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
       {message}
     </div>
   );
@@ -1871,7 +1931,7 @@ function ErrorBanner({ message }: { message: string }) {
 
 function LoadingState({ label }: { label: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-16 text-center text-sm text-muted-foreground">
+    <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center text-sm text-muted-foreground">
       {label}
     </div>
   );
@@ -1879,7 +1939,7 @@ function LoadingState({ label }: { label: string }) {
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-16 text-center">
+    <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
       <p className="text-lg font-medium">No companies match the current search.</p>
       <p className="mt-2 text-sm text-muted-foreground">Try loosening a filter or broadening the query.</p>
     </div>

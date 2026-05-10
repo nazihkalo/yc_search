@@ -3,7 +3,7 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 function TableComponent({ className, ...props }: React.ComponentProps<"table">) {
-  return <table data-slot="table" className={cn("w-full caption-bottom text-sm", className)} {...props} />;
+  return <table data-slot="table" className={cn("w-full caption-bottom text-[0.92rem]", className)} {...props} />;
 }
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
@@ -26,7 +26,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   return (
     <tr
       className={cn(
-        "border-b border-border/50 transition-colors hover:bg-muted/35 data-[state=selected]:bg-muted",
+        "border-b border-border/45 transition-colors hover:bg-primary/5 data-[state=selected]:bg-muted",
         className,
       )}
       {...props}
@@ -38,7 +38,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
     <th
       className={cn(
-        "h-11 px-3 text-left align-middle text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground",
+        "h-11 px-3 text-left align-middle text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground",
         className,
       )}
       {...props}

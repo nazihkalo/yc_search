@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph3D from "react-force-graph-3d";
 import * as THREE from "three";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 
 import { badgeStyleFor, nodeColorFor } from "../../lib/colors";
 import type { GraphData, GraphNode } from "../../lib/graph";
@@ -71,6 +72,8 @@ export function CompaniesForceGraph({
   isFetching?: boolean;
 }) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const isLightTheme = resolvedTheme === "light";
   const { containerRef, size } = useContainerSize();
   // `react-force-graph-3d`'s ref type is generic over its node/link shape. Using `any`
   // keeps the imperative d3Force/cameraPosition access without fighting the generics.
@@ -182,13 +185,15 @@ export function CompaniesForceGraph({
     const haloRadius = Math.max(node.__size * 1.9, 10);
     const geometry = new THREE.SphereGeometry(haloRadius, 16, 16);
     const material = new THREE.MeshBasicMaterial({
-      color: node.__highlighted ? new THREE.Color(0xffffff) : new THREE.Color(node.__color),
+      color: node.__highlighted
+        ? new THREE.Color(isLightTheme ? 0x1f2937 : 0xffffff)
+        : new THREE.Color(node.__color),
       transparent: true,
-      opacity: node.__highlighted ? 0.40 : 0.18,
+      opacity: node.__highlighted ? (isLightTheme ? 0.28 : 0.40) : 0.18,
       depthWrite: false,
     });
     return new THREE.Mesh(geometry, material);
-  }, []);
+  }, [isLightTheme]);
 
   const pinnedNode = useMemo(
     () => (highlightCompanyId ? (preparedData.nodes.find((n) => n.id === highlightCompanyId) ?? null) : null),
@@ -267,7 +272,7 @@ export function CompaniesForceGraph({
 
       {activeNode ? (
         <div
-          className="pointer-events-none absolute z-20 rounded-2xl border border-border/60 bg-background/95 p-3 shadow-xl shadow-black/40 backdrop-blur"
+          className="pointer-events-none absolute z-20 rounded-2xl border border-border/60 bg-background/95 p-3 shadow-xl shadow-foreground/15 backdrop-blur"
           style={
             hovered && tooltipStyle
               ? { left: tooltipStyle.left, top: tooltipStyle.top, width: tooltipStyle.width }
@@ -349,8 +354,8 @@ export function CompaniesForceGraph({
           const weight = (link as { weight?: number }).weight ?? 0.5;
           return Math.max(0.4, Math.min(weight, 1) * 1.5);
         }}
-        linkOpacity={0.22}
-        linkColor={() => "rgba(255,255,255,0.35)"}
+        linkOpacity={isLightTheme ? 0.34 : 0.22}
+        linkColor={() => (isLightTheme ? "rgba(38,50,66,0.42)" : "rgba(255,255,255,0.35)")}
         onNodeClick={handleClick}
         onNodeHover={handleHover}
         cooldownTicks={80}

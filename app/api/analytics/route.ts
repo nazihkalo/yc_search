@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { initializeDatabase } from "../../../lib/db";
+import { hasDatabaseUrl, initializeDatabase } from "../../../lib/db";
 import { parseSearchParams } from "../../../lib/request-parsing";
 import { getBatchAnalytics, getHybridTopCompanyIds } from "../../../lib/search";
 
@@ -10,12 +10,20 @@ const topNSchema = z.coerce.number().int().min(1).max(20).default(8);
 
 export async function GET(request: Request) {
   try {
-    await initializeDatabase();
-
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
     const colorBy = colorBySchema.parse(searchParams.get("colorBy") ?? "none");
     const topN = topNSchema.parse(searchParams.get("topN") ?? "8");
+    if (!hasDatabaseUrl()) {
+      return NextResponse.json({
+        colorBy,
+        totalCompanies: 0,
+        series: colorBy === "none" ? ["total"] : [],
+        rows: [],
+      });
+    }
+
+    await initializeDatabase();
     const hybridTopLimit = 100;
 
     const analytics =

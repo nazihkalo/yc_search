@@ -181,7 +181,7 @@ export function TableFacetedFilter<TData, TValue>({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         {trigger || (
-          <Button variant="outline" size="sm" className="h-8 border-dashed">
+          <Button variant="outline" size="sm" className="h-9 border-dashed text-sm">
             {selectedValues?.size > 0 ? (
               <div
                 role="button"

@@ -41,7 +41,7 @@ export async function StatsStrip() {
 
   return (
     <section className="relative mx-auto w-full max-w-[1280px] px-4 pb-8 sm:px-6 lg:px-8">
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/50 bg-border/50 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border/50 bg-border/50 md:grid-cols-4">
         {items.map((item) => (
           <div key={item.label} className="bg-background/80 px-6 py-5">
             <div className="text-3xl font-semibold tracking-[-0.03em] tabular-nums text-foreground">

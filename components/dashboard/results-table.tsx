@@ -103,18 +103,18 @@ export function ResultsTable({
                   )}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium">{company.name}</p>
+                      <p className="text-base font-medium">{company.name}</p>
                       {typeof company.score === "number" && !showScoreColumn ? (
                         <Badge variant="secondary" className="rounded-full">
                           {company.score.toFixed(3)}
                         </Badge>
                       ) : null}
                     </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                    <p className="mt-1 line-clamp-2 text-[0.9rem] text-muted-foreground">
                       {company.one_liner ?? "No one-liner available."}
                     </p>
                     {company.all_locations ? (
-                      <p className="mt-1 text-xs text-muted-foreground">{company.all_locations}</p>
+                      <p className="mt-1 text-[0.82rem] text-muted-foreground">{company.all_locations}</p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2 md:hidden">
                       {typeof company.score === "number" && showScoreColumn ? (
@@ -159,7 +159,7 @@ export function ResultsTable({
                             onToggleIndustry(industry);
                           }}
                           className={cn(
-                            "rounded-full border px-2 py-1 text-[11px] transition",
+                            "rounded-full border px-2 py-1 text-[0.78rem] transition",
                             selected
                               ? "border-primary/40 bg-primary/12 text-primary"
                               : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
@@ -186,7 +186,7 @@ export function ResultsTable({
                             onToggleTag(tag);
                           }}
                           className={cn(
-                            "rounded-full border px-2 py-1 text-[11px] transition",
+                            "rounded-full border px-2 py-1 text-[0.78rem] transition",
                             selected
                               ? "border-primary/40 bg-primary/12 text-primary"
                               : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground",
@@ -256,7 +256,7 @@ function SortButton({
       variant="ghost"
       size="sm"
       className={cn(
-        "-ml-2 h-auto px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground hover:bg-transparent",
+        "-ml-2 h-auto px-2 py-1 text-xs uppercase tracking-[0.16em] text-muted-foreground hover:bg-transparent",
         active && "text-foreground",
       )}
       onClick={onClick}

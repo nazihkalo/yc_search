@@ -17,7 +17,7 @@ export default function SignInPage() {
             elements: {
               rootBox: "w-full",
               card: "bg-card/80 border border-border/60 shadow-xl shadow-black/30 backdrop-blur",
-              headerTitle: "font-[family-name:var(--font-ui-display)] italic",
+              headerTitle: "font-semibold tracking-tight",
             },
           }}
         />

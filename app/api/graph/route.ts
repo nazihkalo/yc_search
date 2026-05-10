@@ -1,18 +1,32 @@
 import { NextResponse } from "next/server";
 
-import { initializeDatabase } from "../../../lib/db";
+import { hasDatabaseUrl, initializeDatabase } from "../../../lib/db";
 import { getFocusGraphData, getGraphData } from "../../../lib/graph";
 import { parseSearchParams } from "../../../lib/request-parsing";
 
 export async function GET(request: Request) {
   try {
-    await initializeDatabase();
     const { searchParams } = new URL(request.url);
 
     const focusRaw = Number(searchParams.get("focusId"));
     const maxNodesRaw = Number(searchParams.get("maxNodes"));
     const kRaw = Number(searchParams.get("k"));
     const kNearest = Number.isFinite(kRaw) && kRaw > 0 ? Math.min(kRaw, 24) : undefined;
+    if (!hasDatabaseUrl()) {
+      return NextResponse.json({
+        nodes: [],
+        links: [],
+        meta: {
+          nodeCount: 0,
+          linkCount: 0,
+          pgVector: false,
+          truncated: false,
+          ...(Number.isFinite(focusRaw) && focusRaw !== 0 ? { focusId: focusRaw } : {}),
+        },
+      });
+    }
+
+    await initializeDatabase();
 
     if (Number.isFinite(focusRaw) && focusRaw !== 0) {
       const maxNodes = Number.isFinite(maxNodesRaw) && maxNodesRaw > 0 ? Math.min(maxNodesRaw, 200) : 40;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { initializeDatabase } from "../../../lib/db";
+import { hasDatabaseUrl, initializeDatabase } from "../../../lib/db";
 import { parseSearchParams } from "../../../lib/request-parsing";
 import { getVendorAnalytics } from "../../../lib/vendor-analytics";
 
@@ -17,18 +17,30 @@ function parseCsv(value: string | null) {
 
 export async function GET(request: Request) {
   try {
-    await initializeDatabase();
-
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
     const topN = topNSchema.parse(searchParams.get("topN") ?? "50");
     const category = searchParams.get("vendorCategory");
+    const vendorQuery = searchParams.get("vendorQuery");
     const sourceListName = searchParams.get("sourceList");
     const relationshipTypes = parseCsv(searchParams.get("relationshipTypes"));
+    if (!hasDatabaseUrl()) {
+      return NextResponse.json({
+        totalCompanies: 0,
+        totalRelationships: 0,
+        topVendors: [],
+        categories: [],
+        sourceKinds: [],
+        relationshipTypes: [],
+      });
+    }
+
+    await initializeDatabase();
 
     const analytics = await getVendorAnalytics(params, {
       topN,
       category,
+      vendorQuery,
       sourceListName,
       relationshipTypes,
     });
