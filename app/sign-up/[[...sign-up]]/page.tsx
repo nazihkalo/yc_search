@@ -19,6 +19,10 @@ export default function SignUpPage() {
       />
       <div className="relative">
         <SignUp
+          routing="path"
+          path="/sign-up"
+          signInUrl="/sign-in"
+          fallbackRedirectUrl="/dashboard"
           appearance={{
             elements: {
               rootBox: "w-full",
