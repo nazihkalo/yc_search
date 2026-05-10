@@ -15,6 +15,7 @@ type VendorAnalyticsRow = {
 export type VendorAnalyticsOptions = {
   topN?: number;
   category?: string | null;
+  vendorQuery?: string | null;
   relationshipTypes?: string[];
   sourceListName?: string | null;
 };
@@ -207,6 +208,19 @@ export async function getVendorAnalytics(
   if (options.category) {
     queryParams.vendor_category = options.category;
     whereClauses.push("v.category = @vendor_category");
+  }
+
+  const vendorQuery = options.vendorQuery?.trim();
+  if (vendorQuery) {
+    queryParams.vendor_query = `%${vendorQuery.toLowerCase()}%`;
+    whereClauses.push(`
+      (
+        LOWER(v.canonical_name) LIKE @vendor_query
+        OR LOWER(COALESCE(v.domain, '')) LIKE @vendor_query
+        OR LOWER(v.category) LIKE @vendor_query
+        OR LOWER(v.aliases::text) LIKE @vendor_query
+      )
+    `);
   }
 
   if (options.sourceListName) {

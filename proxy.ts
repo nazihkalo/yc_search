@@ -17,7 +17,7 @@ const isApiRoute = createRouteMatcher(["/api/(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isPublicRoute(req)) {
-    return;
+    return NextResponse.next();
   }
 
   const { userId, redirectToSignIn } = await auth();
@@ -32,8 +32,7 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Skip Next internals and all static files, unless found in search params
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|mp4|mov|webm|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
+    // Skip public routes, Next internals, and static files.
+    "/((?!$|_next|sign-in|sign-up|api/webhooks/clerk|api/sync|api/landing-chat|logos|video|favicon.ico|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|mp4|mov|webm|zip|webmanifest)).*)",
   ],
 };

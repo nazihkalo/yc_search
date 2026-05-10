@@ -72,6 +72,10 @@ export function getDb(): Pool {
   return dbInstance;
 }
 
+export function hasDatabaseUrl() {
+  return Boolean(process.env.DATABASE_URL?.trim());
+}
+
 export async function initializeDatabase() {
   if (initialized) {
     return;

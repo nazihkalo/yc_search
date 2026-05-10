@@ -45,12 +45,12 @@ export default function RootLayout({
       appearance={{
         baseTheme: dark,
         variables: {
-          colorPrimary: "oklch(0.72 0.18 60)",
+          colorPrimary: "oklch(0.73 0.135 42)",
           fontFamily: "var(--font-ui-sans)",
         },
       }}
     >
-      <html lang="en" suppressHydrationWarning className="dark">
+      <html lang="en" suppressHydrationWarning>
         <body className={`${sans.variable} ${mono.variable} ${display.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
           <ThemeProvider>
             <TooltipProvider>{children}</TooltipProvider>

@@ -18,10 +18,11 @@ export type BadgeStyle = {
 
 export function badgeStyleFor(key: string | null | undefined): BadgeStyle {
   const hue = hueFromString(key);
+  const base = `hsl(${hue} 72% 50%)`;
   return {
-    background: `hsl(${hue} 55% 22% / 0.55)`,
-    color: `hsl(${hue} 78% 82%)`,
-    borderColor: `hsl(${hue} 45% 40% / 0.55)`,
+    background: `color-mix(in oklch, ${base} 18%, var(--background))`,
+    color: `color-mix(in oklch, ${base} 62%, var(--foreground))`,
+    borderColor: `color-mix(in oklch, ${base} 44%, var(--border))`,
   };
 }
 

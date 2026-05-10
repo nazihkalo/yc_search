@@ -138,7 +138,7 @@ export function LandingChatPrompt() {
           maxLength={500}
           disabled={phase === "streaming"}
           placeholder="Ask anything: 'Has anyone built X?' • 'Show me Spring 2026 fintech' • 'Climate tech founders with prior exits'"
-          className="w-full resize-none rounded-3xl border border-border/60 bg-card/70 px-5 py-4 pr-14 text-left text-base leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="w-full resize-none rounded-lg border border-border/60 bg-card/70 px-5 py-4 pr-14 text-left text-base leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
         <button
           type="submit"
@@ -175,7 +175,7 @@ export function LandingChatPrompt() {
       {(phase === "streaming" || phase === "done") && (answer || citations.length > 0) ? (
         <div className="mt-6 space-y-4 text-left">
           {answer ? (
-            <div className="rounded-2xl border border-border/60 bg-card/60 p-5">
+            <div className="rounded-lg border border-border/60 bg-card/60 p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Answer
               </p>
@@ -192,7 +192,7 @@ export function LandingChatPrompt() {
                 {citations.map((citation) => (
                   <div
                     key={citation.id}
-                    className="rounded-2xl border border-border/60 bg-card/40 p-4"
+                    className="rounded-lg border border-border/60 bg-card/40 p-4"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-semibold text-foreground">{citation.name}</div>
@@ -214,7 +214,7 @@ export function LandingChatPrompt() {
           ) : null}
 
           {phase === "done" ? (
-            <div className="rounded-3xl border border-primary/40 bg-primary/5 p-5 text-center">
+            <div className="rounded-lg border border-primary/40 bg-primary/5 p-5 text-center">
               <p className="text-sm text-foreground/90">
                 That&apos;s your free preview. Sign up to keep asking, drive the table and graph from
                 chat, and see every citation.
@@ -232,9 +232,9 @@ export function LandingChatPrompt() {
       ) : null}
 
       {phase === "rate_limited" ? (
-        <div className="mt-6 rounded-3xl border border-primary/40 bg-primary/5 p-5 text-center">
+        <div className="mt-6 rounded-lg border border-primary/40 bg-primary/5 p-5 text-center">
           <p className="text-sm text-foreground/90">
-            You&apos;ve already used your free preview. Sign up to keep asking — your question is saved.
+            You&apos;ve already used your free preview. Sign up to keep asking. Your question is saved.
           </p>
           <Link
             href={signUpHref}
@@ -247,7 +247,7 @@ export function LandingChatPrompt() {
       ) : null}
 
       {phase === "error" && errorMessage ? (
-        <div className="mt-6 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="mt-6 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           {errorMessage}
         </div>
       ) : null}

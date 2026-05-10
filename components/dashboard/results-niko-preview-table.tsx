@@ -240,7 +240,7 @@ export function ResultsNikoPreviewTable({
           const company = row.original;
 
           return (
-            <div className="min-w-[260px] py-1.5">
+            <div className="min-w-[260px] py-1">
               <div className="flex items-start gap-3">
                 <CompanyLogo
                   key={company.small_logo_thumb_url ?? `fallback-${company.id}`}
@@ -260,11 +260,11 @@ export function ResultsNikoPreviewTable({
                     ) : null}
                     {company.top_company ? <Badge>Top</Badge> : null}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-[0.9375rem] leading-snug text-muted-foreground">
+                  <p className="mt-1 line-clamp-2 text-[0.9rem] leading-snug text-muted-foreground">
                     {company.one_liner ?? "No one-liner available."}
                   </p>
                   {company.all_locations ? (
-                    <p className="mt-1 text-xs text-muted-foreground/90">
+                    <p className="mt-1 text-[0.82rem] text-muted-foreground/90">
                       {company.all_locations}
                     </p>
                   ) : null}
@@ -334,7 +334,7 @@ export function ResultsNikoPreviewTable({
                 <Badge
                   key={`${row.original.id}-industry-${industry}`}
                   variant="tinted"
-                  className="max-w-[112px] truncate border"
+                  className="max-w-[112px] truncate border text-[0.8rem]"
                   style={badgeStyleFor(`ind:${industry}`)}
                 >
                   {industry}
@@ -379,14 +379,14 @@ export function ResultsNikoPreviewTable({
                   <Badge
                     key={`${row.original.id}-tag-${tag}`}
                     variant="tinted"
-                    className="max-w-[112px] truncate border"
+                    className="max-w-[112px] truncate border text-[0.8rem]"
                     style={badgeStyleFor(`tag:${tag}`)}
                   >
                     {tag}
                   </Badge>
                 ))}
                 {row.original.tags.length > 2 ? (
-                  <Badge variant="outline" className="text-muted-foreground">
+                  <Badge variant="outline" className="text-[0.8rem] text-muted-foreground">
                     +{row.original.tags.length - 2}
                   </Badge>
                 ) : null}
@@ -433,7 +433,7 @@ export function ResultsNikoPreviewTable({
           return batch ? (
             <Badge
               variant="tinted"
-              className="border whitespace-nowrap"
+              className="whitespace-nowrap border text-[0.8rem]"
               style={badgeStyleFor(`batch:${batch}`)}
             >
               {batch}
@@ -492,7 +492,7 @@ export function ResultsNikoPreviewTable({
         cell: ({ row }) => (
           <Badge
             variant="tinted"
-            className="whitespace-nowrap border"
+            className="whitespace-nowrap border text-[0.8rem]"
             style={badgeStyleFor(sourceBadgeTone(row.original.source_kind))}
           >
             {sourceLabel(row.original.source_kind)}
@@ -717,7 +717,7 @@ export function ResultsNikoPreviewTable({
   }
 
   return (
-    <Card className="overflow-hidden border-border/60 bg-card/95 shadow-sm">
+    <Card className="overflow-hidden rounded-lg border-border/60 bg-card/85 shadow-sm shadow-black/10">
       <CardContent className="p-0">
         <DataTableRoot
           data={results}
@@ -740,7 +740,7 @@ export function ResultsNikoPreviewTable({
           onColumnFiltersChange={handleColumnFiltersChange}
           onColumnVisibilityChange={handleColumnVisibilityChange}
         >
-          <div className="border-b border-border/60 px-4 py-3">
+          <div className="border-b border-border/60 bg-background/35 px-3 py-3 sm:px-4">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               {toolbarPrefix ? (
                 <div className="flex flex-wrap items-end gap-3">{toolbarPrefix}</div>
@@ -749,12 +749,12 @@ export function ResultsNikoPreviewTable({
               )}
               <DataTableToolbarSection className="justify-end px-0">
                 {isLoading && !initialLoading ? (
-                  <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 rounded-md border border-border/70 bg-background/80 px-3 py-1.5 text-sm text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" />
                     Refreshing
                   </div>
                 ) : null}
-                <div className="rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground">
+                <div className="rounded-md border border-border/70 bg-background/80 px-3 py-1.5 text-sm text-muted-foreground">
                   {total.toLocaleString()} matches
                 </div>
                 <DataTableViewMenu />
@@ -762,7 +762,7 @@ export function ResultsNikoPreviewTable({
             </div>
           </div>
 
-          <DataTable className="min-w-[980px]">
+          <DataTable className="min-w-[1040px] rounded-none border-0 text-[0.92rem]">
             <DataTableHeader />
             <DataTableBody
               onRowClick={(company: CompanyResult) => {
@@ -798,7 +798,7 @@ export function ResultsNikoPreviewTable({
             </DataTableBody>
           </DataTable>
 
-          <div className="border-t border-border/60 px-4 py-3">
+          <div className="border-t border-border/60 bg-background/35 px-3 py-3 sm:px-4">
             <DataTablePagination
               totalCount={total}
               pageSizeOptions={pageSizeOptions}
@@ -976,7 +976,7 @@ const BatchHierarchyFilterMenu = memo(function BatchHierarchyFilterMenu({
       <PopoverContent align="start" className="w-[420px] p-0">
         <div className="grid grid-cols-[148px_minmax(0,1fr)]">
           <div className="border-r border-border/60 p-2">
-            <p className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="px-2 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
               Year
             </p>
             <div className="mt-1 space-y-1">
@@ -993,7 +993,7 @@ const BatchHierarchyFilterMenu = memo(function BatchHierarchyFilterMenu({
                       toggleYear(option.value);
                     }}
                     onMouseEnter={() => onFocusedYearChange(option.value)}
-                    className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-xs transition ${
+                    className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm transition ${
                       selected
                         ? "bg-primary/10 text-primary"
                         : focused
@@ -1005,7 +1005,7 @@ const BatchHierarchyFilterMenu = memo(function BatchHierarchyFilterMenu({
                       {selected ? <Check className="size-3.5" /> : <ChevronRight className="size-3.5 opacity-50" />}
                       {option.value}
                     </span>
-                    <span className="text-[11px] opacity-70">{option.count}</span>
+                    <span className="text-xs opacity-70">{option.count}</span>
                   </button>
                 );
               })}
@@ -1013,7 +1013,7 @@ const BatchHierarchyFilterMenu = memo(function BatchHierarchyFilterMenu({
           </div>
 
           <div className="p-2">
-            <p className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="px-2 py-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
               Batch
             </p>
             {activeGroup && activeGroup.batches.length > 0 ? (
@@ -1025,7 +1025,7 @@ const BatchHierarchyFilterMenu = memo(function BatchHierarchyFilterMenu({
                       key={`batch-option-${option.value}`}
                       type="button"
                       onClick={() => toggleBatch(option.value, activeGroup.year)}
-                      className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-xs transition ${
+                      className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm transition ${
                         selected
                           ? "bg-primary/10 text-primary"
                           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -1035,13 +1035,13 @@ const BatchHierarchyFilterMenu = memo(function BatchHierarchyFilterMenu({
                         {selected ? <Check className="size-3.5" /> : null}
                         {option.value}
                       </span>
-                      <span className="text-[11px] opacity-70">{option.count}</span>
+                      <span className="text-xs opacity-70">{option.count}</span>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="px-2 py-4 text-xs text-muted-foreground">
+              <div className="px-2 py-4 text-sm text-muted-foreground">
                 Select a year to narrow to a batch.
               </div>
             )}
@@ -1069,7 +1069,7 @@ const CompanyLogo = memo(function CompanyLogo({
       <img
         src={FALLBACK_LOGO_SRC}
         alt={`${companyName} placeholder logo`}
-        className="mt-0.5 size-11 rounded-xl border border-border/70 bg-muted/40 object-cover"
+        className="mt-0.5 size-10 rounded-lg border border-border/70 bg-muted/40 object-cover"
         loading="lazy"
       />
     );
@@ -1080,7 +1080,7 @@ const CompanyLogo = memo(function CompanyLogo({
     <img
       src={src}
       alt={`${companyName} logo`}
-      className="mt-0.5 size-11 rounded-xl border border-border/70 object-cover"
+      className="mt-0.5 size-10 rounded-lg border border-border/70 object-cover"
       loading="lazy"
       onError={() => {
         failedLogoUrls.add(src);

@@ -152,20 +152,19 @@ export function DashboardShell({
 
   if (!copilotEnabled) {
     return (
-      <div data-browse-pane className="h-[calc(100vh-3rem)] w-full overflow-y-auto">
+      <div data-browse-pane className="h-[calc(100vh-3rem)] w-full overflow-y-auto bg-background">
         {children}
       </div>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] w-full flex-col overflow-hidden lg:flex-row">
+    <div className="flex h-[calc(100vh-3rem)] w-full flex-col overflow-hidden bg-[linear-gradient(to_bottom,var(--background),color-mix(in_oklch,var(--background)_92%,var(--muted)_8%))] lg:flex-row">
 
-      {/* ── Browse pane ─────────────────────────────────────────── */}
       <div
         data-browse-pane
         className={cn(
-          "overflow-y-auto lg:flex-1",
+          "min-w-0 overflow-y-auto bg-background/72 lg:flex-1",
           mobileTab === "browse" ? "flex-1" : "hidden lg:block",
         )}
       >
@@ -178,23 +177,19 @@ export function DashboardShell({
       </Suspense>
       <PendingQuestionReplay />
 
-      {/* ── Chat pane ───────────────────────────────────────────── */}
       <aside
         className={cn(
-          "bg-card/30",
-          // Mobile: fill height when chat tab; hidden when browse tab.
+          "bg-card/70 shadow-2xl shadow-black/10 backdrop-blur",
           mobileTab === "chat" ? "flex flex-1 flex-col" : "hidden",
-          // Desktop: always visible as a side panel in row direction.
           "lg:flex lg:flex-none lg:shrink-0 lg:flex-row",
         )}
       >
         {showCollapsedBar ? (
-          // Collapsed bar — desktop only (mobile never reaches here).
           <button
             type="button"
             onClick={() => setCollapsed(false)}
             title="Expand chat"
-            className="flex w-10 flex-col items-center gap-2 border-l border-border/40 px-1 py-3 text-xs text-muted-foreground transition hover:text-primary"
+            className="flex w-10 flex-col items-center gap-2 border-l border-border/50 bg-card/70 px-1 py-3 text-xs text-muted-foreground transition hover:text-primary"
           >
             <MessageSquare className="size-4" />
             <span
@@ -206,18 +201,16 @@ export function DashboardShell({
           </button>
         ) : (
           <>
-            {/* Drag handle — desktop only */}
             <div
               onMouseDown={onDragStart}
-              className="group hidden w-1.5 shrink-0 cursor-col-resize items-center justify-center border-l border-border/40 transition-colors hover:border-primary/60 hover:bg-primary/10 active:bg-primary/20 lg:flex"
+              className="group hidden w-2 shrink-0 cursor-col-resize items-center justify-center border-l border-border/50 bg-background/25 transition-colors hover:border-primary/60 hover:bg-primary/10 active:bg-primary/20 lg:flex"
               title="Drag to resize"
             >
               <div className="h-8 w-px rounded-full bg-border/60 transition-colors group-hover:bg-primary/50" />
             </div>
 
-            {/* Chat content */}
             <div
-              className="flex h-full min-h-0 w-full flex-col border-l border-border/40 lg:border-l-0"
+              className="flex h-full min-h-0 w-full flex-col border-l border-border/50 bg-card/65 lg:border-l-0"
               style={isLg ? { width: chatWidth } : undefined}
             >
               <Suspense fallback={null}>

@@ -10,11 +10,13 @@ import {
   Linkedin,
   MapPin,
   Network,
+  Package,
   Sparkles,
   Twitter,
   Users,
 } from "lucide-react";
 
+import { sourceLabel } from "../../lib/company-source";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 
@@ -62,6 +64,24 @@ export type CompanyDetailChatData = CompanyChatCardData & {
   launchedYear: number | null;
   founders: FounderChatCardData[];
   topLinks: { url: string; label: string; kind: string }[];
+};
+
+export type VendorChatData = {
+  id: number;
+  name: string;
+  category: string;
+  domain: string | null;
+  companyCount: number;
+  relationshipCount: number;
+  sourceCounts: Record<string, number>;
+};
+
+export type VendorAnalyticsChatData = {
+  totalCompanies: number;
+  totalRelationships: number;
+  topVendors: VendorChatData[];
+  categories: Array<{ category: string; companyCount: number; relationshipCount: number }>;
+  relationshipTypes: Array<{ relationshipType: string; companyCount: number; relationshipCount: number }>;
 };
 
 export function ToolCallTrace({
@@ -257,6 +277,87 @@ export function CompanyResultsList({
         ))}
       </div>
     </div>
+  );
+}
+
+export function VendorAnalyticsList({
+  analytics,
+  category,
+  query,
+}: {
+  analytics: VendorAnalyticsChatData;
+  category?: string | null;
+  query?: string | null;
+}) {
+  const vendors = analytics.topVendors ?? [];
+
+  if (vendors.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+        No vendor relationships found{category ? <> for <span className="font-medium">{category}</span></> : null}
+        {query ? <> in <span className="font-medium">{query}</span></> : null}.
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 flex flex-col gap-2">
+      <div className="flex items-center gap-2 px-1 text-[11px] uppercase tracking-wider text-muted-foreground/80">
+        <Package className="size-3" />
+        <span>
+          {vendors.length} top vendors across {analytics.totalCompanies.toLocaleString()} compan
+          {analytics.totalCompanies === 1 ? "y" : "ies"}
+          {category ? <> in {category}</> : null}
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {vendors.map((vendor, index) => (
+          <VendorChatCard key={vendor.id} vendor={vendor} rank={index + 1} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VendorChatCard({ vendor, rank }: { vendor: VendorChatData; rank: number }) {
+  const sources = Object.entries(vendor.sourceCounts ?? {});
+  return (
+    <a
+      href={`/vendors/${vendor.id}`}
+      className="group flex items-start gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2.5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm"
+    >
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted text-[11px] font-semibold uppercase text-muted-foreground">
+        {vendor.name.slice(0, 2)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            {String(rank).padStart(2, "0")}
+          </span>
+          <span className="truncate text-sm font-semibold leading-tight text-foreground group-hover:text-primary">
+            {vendor.name}
+          </span>
+          <Badge variant="muted" className="px-1.5 py-0 text-[10px]">
+            {vendor.category}
+          </Badge>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span>{vendor.companyCount.toLocaleString()} companies</span>
+          <span>{vendor.relationshipCount.toLocaleString()} relationships</span>
+          {vendor.domain ? <span>{vendor.domain}</span> : null}
+        </div>
+        {sources.length > 0 ? (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {sources.map(([source, count]) => (
+              <Badge key={source} variant="outline" className="px-1.5 py-0 text-[10px]">
+                {sourceLabel(source)} {count}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <ExternalLink className="mt-1 size-3.5 shrink-0 text-muted-foreground/50 transition group-hover:text-primary" />
+    </a>
   );
 }
 
