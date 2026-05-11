@@ -17,11 +17,20 @@ import {
   VendorAnalyticsList,
   type VendorAnalyticsChatData,
 } from "./chat-cards";
+import type { CompanyResult, SearchResponse } from "./types";
 import { Badge } from "../ui/badge";
 
 type SortOption = "relevance" | "newest" | "team_size" | "name";
 type ResultsView = "cards" | "table";
 type DashboardTab = "results" | "analytics" | "vendors";
+type SearchCompaniesCardPayload = {
+  message: string;
+  query: string;
+  totalCandidates: number;
+  results: CompanyChatCardData[];
+  sort: SortOption;
+  error?: string;
+};
 
 export type VisibleCompany = {
   id: number;
@@ -192,6 +201,9 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       name: "searchCompanies",
       description:
         "Apply a search query and/or filters to the YC companies table on the user's left. " +
+        "Returns a compact set of company cards for the top matching companies, so use this " +
+        "whenever the user asks to find, list, browse, compare, show latest/newest, or otherwise " +
+        "return a manageable set of companies. " +
         "Pass only the fields you want to change. Existing filters are merged unless `replaceFilters` is true. " +
         "Use the user's current state (visible via the readable) to decide whether to add or replace.",
       parameters: [
@@ -313,48 +325,116 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           const s = stateRef.current;
           const set = settersRef.current;
           const replace = replaceFilters === true;
+          const nextSort = sort !== undefined && isSortOption(sort) ? sort : s.sort;
+          const nextQuery = query !== undefined ? query : s.query;
+          const nextTags =
+            tags !== undefined ? mergeFilterValues(s.tags, tags, replace) : replace ? [] : s.tags;
+          const nextIndustries =
+            industries !== undefined
+              ? mergeFilterValues(s.industries, industries, replace)
+              : replace
+                ? []
+                : s.industries;
+          const nextBatches =
+            batches !== undefined
+              ? mergeFilterValues(s.batches, batches, replace)
+              : replace
+                ? []
+                : s.batches;
+          const nextStages =
+            stages !== undefined
+              ? mergeFilterValues(s.stages, stages, replace)
+              : replace
+                ? []
+                : s.stages;
+          const nextRegions =
+            regions !== undefined
+              ? mergeFilterValues(s.regions, regions, replace)
+              : replace
+                ? []
+                : s.regions;
+          const nextSources =
+            sources !== undefined
+              ? mergeFilterValues(s.sources, sources, replace)
+              : replace
+                ? []
+                : s.sources;
+          const nextYears =
+            years !== undefined ? mergeFilterValues(s.years, years, replace) : replace ? [] : s.years;
+          const nextIsHiring = isHiring !== undefined ? isHiring : replace ? false : s.isHiring;
+          const nextNonprofit = nonprofit !== undefined ? nonprofit : replace ? false : s.nonprofit;
+          const nextTopCompany = topCompany !== undefined ? topCompany : replace ? false : s.topCompany;
 
           set.setHighlightCompanyId(null);
-          if (query !== undefined) set.setQuery(query);
-          if (tags !== undefined) {
-            set.setTags(replace ? tags : Array.from(new Set([...s.tags, ...tags])));
-          } else if (replace) set.setTags([]);
-          if (industries !== undefined) {
-            set.setIndustries(
-              replace ? industries : Array.from(new Set([...s.industries, ...industries])),
-            );
-          } else if (replace) set.setIndustries([]);
-          if (batches !== undefined) {
-            set.setBatches(replace ? batches : Array.from(new Set([...s.batches, ...batches])));
-          } else if (replace) set.setBatches([]);
-          if (stages !== undefined) {
-            set.setStages(replace ? stages : Array.from(new Set([...s.stages, ...stages])));
-          } else if (replace) set.setStages([]);
-          if (regions !== undefined) {
-            set.setRegions(replace ? regions : Array.from(new Set([...s.regions, ...regions])));
-          } else if (replace) set.setRegions([]);
-          if (sources !== undefined) {
-            set.setSources(replace ? sources : Array.from(new Set([...s.sources, ...sources])));
-          } else if (replace) set.setSources([]);
-          if (years !== undefined) {
-            set.setYears(replace ? years : Array.from(new Set([...s.years, ...years])));
-          } else if (replace) set.setYears([]);
-          if (isHiring !== undefined) set.setIsHiring(isHiring);
-          else if (replace) set.setIsHiring(false);
-          if (nonprofit !== undefined) set.setNonprofit(nonprofit);
-          else if (replace) set.setNonprofit(false);
-          if (topCompany !== undefined) set.setTopCompany(topCompany);
-          else if (replace) set.setTopCompany(false);
-          if (sort !== undefined && isSortOption(sort)) set.setSort(sort);
+          set.setQuery(nextQuery);
+          set.setTags(nextTags);
+          set.setIndustries(nextIndustries);
+          set.setBatches(nextBatches);
+          set.setStages(nextStages);
+          set.setRegions(nextRegions);
+          set.setSources(nextSources);
+          set.setYears(nextYears);
+          set.setIsHiring(nextIsHiring);
+          set.setNonprofit(nextNonprofit);
+          set.setTopCompany(nextTopCompany);
+          set.setSort(nextSort);
 
-          return "Filters applied.";
+          const previewParams = buildSearchPreviewParams({
+            query: nextQuery,
+            tags: nextTags,
+            industries: nextIndustries,
+            batches: nextBatches,
+            stages: nextStages,
+            regions: nextRegions,
+            sources: nextSources,
+            years: nextYears,
+            isHiring: nextIsHiring,
+            nonprofit: nextNonprofit,
+            topCompany: nextTopCompany,
+            sort: nextSort,
+          });
+          const res = await fetch(`/api/search?${previewParams.toString()}`);
+          if (!res.ok) {
+            return JSON.stringify({
+              message: "Filters applied.",
+              query: nextQuery,
+              totalCandidates: 0,
+              results: [],
+              sort: nextSort,
+              error: `Search preview failed (${res.status})`,
+            } satisfies SearchCompaniesCardPayload);
+          }
+          const payload = (await res.json()) as SearchResponse & { error?: string };
+          if (payload.error) {
+            return JSON.stringify({
+              message: "Filters applied.",
+              query: nextQuery,
+              totalCandidates: 0,
+              results: [],
+              sort: nextSort,
+              error: payload.error,
+            } satisfies SearchCompaniesCardPayload);
+          }
+
+          return JSON.stringify({
+            message: "Filters applied.",
+            query: nextQuery,
+            totalCandidates: payload.total,
+            results: payload.results.slice(0, 6).map(toCompanyChatCardData),
+            sort: nextSort,
+          } satisfies SearchCompaniesCardPayload);
         } catch (error) {
-          return `Failed to apply filters: ${
-            error instanceof Error ? error.message : "unknown error"
-          }`;
+          return JSON.stringify({
+            message: "Failed to apply filters.",
+            query: "",
+            totalCandidates: 0,
+            results: [],
+            sort: "relevance",
+            error: error instanceof Error ? error.message : "unknown error",
+          } satisfies SearchCompaniesCardPayload);
         }
       },
-      render: ({ status, args }) => {
+      render: ({ status, args, result }) => {
         const a = (args ?? {}) as Record<string, unknown>;
         const chips: Array<{ label: string; tone?: "primary" | "muted" }> = [];
         const queryStr = typeof a.query === "string" ? a.query : "";
@@ -380,14 +460,20 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
         if (typeof a.sort === "string" && a.sort !== "relevance") {
           chips.push({ label: `sort: ${a.sort}` });
         }
+        const parsed = parseToolResult<SearchCompaniesCardPayload>(result);
+        const resultCount = parsed?.results?.length ?? 0;
         const summary = chips.length > 0 ? `${chips.length} chip${chips.length === 1 ? "" : "s"}` : "no-op";
         return (
-          <div className="my-1 flex flex-col gap-1">
+          <div className="my-2 flex flex-col gap-1">
             <ToolCallTrace
               name="searchCompanies"
               status={status}
               args={a}
-              summary={status === "complete" ? `applied · ${summary}` : "applying…"}
+              summary={
+                status === "complete"
+                  ? `applied · ${resultCount} card${resultCount === 1 ? "" : "s"} · ${summary}`
+                  : "searching…"
+              }
             />
             {chips.length > 0 ? (
               <div className="flex flex-wrap gap-1">
@@ -401,6 +487,18 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
                   </Badge>
                 ))}
               </div>
+            ) : null}
+            {status === "complete" && parsed?.error ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {parsed.error}
+              </div>
+            ) : null}
+            {status === "complete" && parsed && !parsed.error ? (
+              <CompanyResultsList
+                query={parsed.query}
+                totalCandidates={parsed.totalCandidates}
+                results={parsed.results}
+              />
             ) : null}
           </div>
         );
@@ -1117,6 +1215,70 @@ function parseToolResult<T>(result: unknown): T | null {
 
 function isSortOption(value: string): value is SortOption {
   return value === "relevance" || value === "newest" || value === "team_size" || value === "name";
+}
+
+function mergeFilterValues<T extends string | number>(current: T[], incoming: T[], replace: boolean) {
+  return replace ? incoming : Array.from(new Set([...current, ...incoming]));
+}
+
+function buildSearchPreviewParams({
+  query,
+  tags,
+  industries,
+  batches,
+  stages,
+  regions,
+  sources,
+  years,
+  isHiring,
+  nonprofit,
+  topCompany,
+  sort,
+}: {
+  query: string;
+  tags: string[];
+  industries: string[];
+  batches: string[];
+  stages: string[];
+  regions: string[];
+  sources: string[];
+  years: number[];
+  isHiring: boolean;
+  nonprofit: boolean;
+  topCompany: boolean;
+  sort: SortOption;
+}) {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("q", query.trim());
+  if (tags.length) params.set("tags", tags.join(","));
+  if (industries.length) params.set("industries", industries.join(","));
+  if (batches.length) params.set("batches", batches.join(","));
+  if (stages.length) params.set("stages", stages.join(","));
+  if (regions.length) params.set("regions", regions.join(","));
+  if (sources.length) params.set("sources", sources.join(","));
+  if (years.length) params.set("years", years.join(","));
+  if (isHiring) params.set("isHiring", "1");
+  if (nonprofit) params.set("nonprofit", "1");
+  if (topCompany) params.set("topCompany", "1");
+  params.set("sort", sort);
+  params.set("page", "1");
+  params.set("pageSize", "6");
+  return params;
+}
+
+function toCompanyChatCardData(company: CompanyResult): CompanyChatCardData {
+  return {
+    id: company.id,
+    name: company.name,
+    slug: company.slug,
+    batch: company.batch,
+    industry: company.industry,
+    oneLiner: company.one_liner,
+    websiteUrl: company.website,
+    ycProfileUrl: company.url,
+    companyPage: `/companies/${company.id}`,
+    logoUrl: company.small_logo_thumb_url,
+  };
 }
 
 function topValues(items: Array<{ value: string; count: number }> | undefined, n: number) {

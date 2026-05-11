@@ -14,6 +14,22 @@ type RenderedNode = GraphNode & {
   __size: number;
   __ring: boolean;
   __highlighted: boolean;
+  __projectedX?: number;
+  __projectedY?: number;
+  __projectedZ?: number;
+  vx?: number;
+  vy?: number;
+  vz?: number;
+};
+
+type RenderedLink = {
+  source: number | RenderedNode;
+  target: number | RenderedNode;
+  weight: number;
+  type?: string;
+  reason?: string;
+  __strength: number;
+  __distance: number;
 };
 
 type ColorBy = "batch" | "industry" | "stage";
@@ -56,6 +72,36 @@ function keyFor(node: GraphNode, by: ColorBy): string {
   return node.stage ?? "Unknown stage";
 }
 
+function createProjectionForce(strength = 0.045) {
+  let nodes: RenderedNode[] = [];
+  const force = ((alpha: number) => {
+    for (const node of nodes) {
+      if (
+        typeof node.__projectedX !== "number" ||
+        typeof node.__projectedY !== "number" ||
+        typeof node.__projectedZ !== "number"
+      ) {
+        continue;
+      }
+      node.vx = (node.vx ?? 0) + (node.__projectedX - (node.x ?? 0)) * alpha * strength;
+      node.vy = (node.vy ?? 0) + (node.__projectedY - (node.y ?? 0)) * alpha * strength;
+      node.vz = (node.vz ?? 0) + (node.__projectedZ - (node.z ?? 0)) * alpha * strength;
+    }
+  }) as ((alpha: number) => void) & { initialize: (nextNodes: RenderedNode[]) => void };
+  force.initialize = (nextNodes: RenderedNode[]) => {
+    nodes = nextNodes;
+  };
+  return force;
+}
+
+function normalizeWeight(weight: number, min: number, max: number) {
+  if (!Number.isFinite(weight)) return 0.35;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || Math.abs(max - min) < 0.001) {
+    return Math.max(0.2, Math.min(1, weight));
+  }
+  return Math.max(0.05, Math.min(1, (weight - min) / (max - min)));
+}
+
 export function CompaniesForceGraph({
   data,
   returnToPath,
@@ -96,8 +142,21 @@ export function CompaniesForceGraph({
         : 0;
       const baseSize = 1 + scale * 6;
       const isHighlighted = node.id === highlightCompanyId;
+      const hasProjection =
+        typeof node.x === "number" &&
+        typeof node.y === "number" &&
+        typeof node.z === "number" &&
+        Number.isFinite(node.x) &&
+        Number.isFinite(node.y) &&
+        Number.isFinite(node.z);
       return {
         ...node,
+        x: hasProjection ? node.x : undefined,
+        y: hasProjection ? node.y : undefined,
+        z: hasProjection ? node.z : undefined,
+        __projectedX: hasProjection ? node.x : undefined,
+        __projectedY: hasProjection ? node.y : undefined,
+        __projectedZ: hasProjection ? node.z : undefined,
         __color: nodeColorFor(colorKey),
         __size: node.isFocus
           ? Math.max(baseSize * 2.2, 10)
@@ -109,11 +168,21 @@ export function CompaniesForceGraph({
       };
     });
 
-    const links = data.links.map((link) => ({
-      source: link.source,
-      target: link.target,
-      weight: link.weight,
-    }));
+    const weights = data.links.map((link) => link.weight).filter(Number.isFinite);
+    const minWeight = weights.length ? Math.min(...weights) : 0;
+    const maxWeight = weights.length ? Math.max(...weights) : 1;
+    const links: RenderedLink[] = data.links.map((link) => {
+      const strength = normalizeWeight(link.weight, minWeight, maxWeight);
+      return {
+        source: link.source,
+        target: link.target,
+        weight: link.weight,
+        type: link.type,
+        reason: link.reason,
+        __strength: strength,
+        __distance: 120 - strength * 86,
+      };
+    });
 
     return { nodes, links };
   }, [data, colorBy, highlightCompanyId]);
@@ -170,13 +239,17 @@ export function CompaniesForceGraph({
     if (!instance) return;
     const linkForce = instance.d3Force("link");
     if (linkForce && "distance" in linkForce) {
-      linkForce.distance(() => 22);
+      linkForce.distance((link: RenderedLink) => link.__distance ?? 58);
+    }
+    if (linkForce && "strength" in linkForce && linkForce.strength) {
+      linkForce.strength((link: RenderedLink) => 0.08 + (link.__strength ?? 0.35) * 0.42);
     }
     const chargeForce = instance.d3Force("charge");
     if (chargeForce && "strength" in chargeForce && chargeForce.strength) {
-      chargeForce.strength(() => -38);
+      chargeForce.strength(() => -30);
     }
-  }, [preparedData]);
+    instance.d3Force("projection", createProjectionForce(data.meta.layout === "pca" ? 0.06 : 0));
+  }, [data.meta.layout, preparedData]);
 
   const buildFocusHalo = useCallback((node: RenderedNode): THREE.Object3D => {
     if (!node.__ring && !node.__highlighted) {
@@ -264,10 +337,22 @@ export function CompaniesForceGraph({
             </li>
           ))}
         </ul>
+        <div className="mt-3 border-t border-border/50 pt-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Edges
+          </p>
+          <div className="mt-2 flex items-center gap-2 text-foreground/85">
+            <span className="h-px w-8 rounded-full bg-foreground/45" />
+            <span>Semantic neighbors</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            Width follows embedding similarity.
+          </p>
+        </div>
       </div>
 
       <div className="pointer-events-none absolute bottom-4 right-4 z-10 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
-        {data.meta.nodeCount} nodes · {data.meta.linkCount} edges
+        {data.meta.nodeCount} nodes · {data.meta.linkCount} edges · {data.meta.layout === "pca" ? "PCA layout" : "force layout"}
       </div>
 
       {activeNode ? (
@@ -351,11 +436,20 @@ export function CompaniesForceGraph({
         nodeThreeObject={(node: unknown) => buildFocusHalo(node as RenderedNode)}
         nodeThreeObjectExtend
         linkWidth={(link: unknown) => {
-          const weight = (link as { weight?: number }).weight ?? 0.5;
-          return Math.max(0.4, Math.min(weight, 1) * 1.5);
+          const strength = (link as RenderedLink).__strength ?? 0.35;
+          return 0.35 + strength * 2.4;
         }}
-        linkOpacity={isLightTheme ? 0.34 : 0.22}
-        linkColor={() => (isLightTheme ? "rgba(38,50,66,0.42)" : "rgba(255,255,255,0.35)")}
+        linkOpacity={1}
+        linkColor={(link: unknown) => {
+          const strength = (link as RenderedLink).__strength ?? 0.35;
+          const alpha = 0.16 + strength * (isLightTheme ? 0.42 : 0.34);
+          return isLightTheme ? `rgba(38,50,66,${alpha})` : `rgba(255,255,255,${alpha})`;
+        }}
+        linkLabel={(link: unknown) => {
+          const rendered = link as RenderedLink;
+          const score = Math.round((rendered.weight ?? 0) * 100);
+          return `${rendered.reason ?? "Semantic nearest neighbor"} · ${score}%`;
+        }}
         onNodeClick={handleClick}
         onNodeHover={handleHover}
         cooldownTicks={80}

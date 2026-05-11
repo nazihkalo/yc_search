@@ -21,6 +21,8 @@ export async function GET(request: Request) {
           linkCount: 0,
           pgVector: false,
           truncated: false,
+          layout: "force",
+          edgeStrategy: "none",
           ...(Number.isFinite(focusRaw) && focusRaw !== 0 ? { focusId: focusRaw } : {}),
         },
       });
