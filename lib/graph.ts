@@ -1,5 +1,7 @@
 import { isPgVectorReady, parseJsonArray, query, queryOne } from "./db";
+import { projectEmbeddings, type ProjectionPoint } from "./embedding-projection";
 import { hybridSearch, type SearchParams } from "./search";
+import { parseVectorString } from "./vector-utils";
 
 export type GraphNode = {
   id: number;
@@ -18,12 +20,17 @@ export type GraphNode = {
   industries: string[];
   isFocus?: boolean;
   similarity?: number;
+  x?: number;
+  y?: number;
+  z?: number;
 };
 
 export type GraphLink = {
   source: number;
   target: number;
   weight: number;
+  type: "semantic_similarity";
+  reason: string;
 };
 
 export type GraphData = {
@@ -34,6 +41,8 @@ export type GraphData = {
     linkCount: number;
     pgVector: boolean;
     truncated: boolean;
+    layout: "pca" | "force";
+    edgeStrategy: "semantic_knn" | "none";
     focusId?: number;
   };
 };
@@ -122,8 +131,42 @@ function normalizeLinks(edges: EdgeRow[]): GraphLink[] {
       source: Number(row.source),
       target: Number(row.target),
       weight: Number(row.weight),
+      type: "semantic_similarity" as const,
+      reason: "Semantic nearest neighbor from company embeddings",
     }))
     .filter((edge) => Number.isFinite(edge.weight) && edge.source !== edge.target);
+}
+
+async function fetchEmbeddingProjection(ids: number[]) {
+  if (ids.length === 0) return new Map<number, ProjectionPoint>();
+
+  const idsLiteral = `{${ids.join(",")}}`;
+  const rows = await query<{ company_id: number; vector: string | null }>(
+    `
+      SELECT company_id, vector::text AS vector
+      FROM company_embeddings
+      WHERE company_id = ANY(@ids::int[])
+    `,
+    { ids: idsLiteral },
+  );
+
+  return projectEmbeddings(
+    rows.map((row) => ({
+      id: Number(row.company_id),
+      vector: parseVectorString(row.vector),
+    })),
+  );
+}
+
+function applyProjection(nodes: GraphNode[], projection: Map<number, ProjectionPoint>, focusId?: number) {
+  const focusPoint = typeof focusId === "number" ? projection.get(focusId) : null;
+  for (const node of nodes) {
+    const point = projection.get(node.id);
+    if (!point) continue;
+    node.x = point.x - (focusPoint?.x ?? 0);
+    node.y = point.y - (focusPoint?.y ?? 0);
+    node.z = point.z - (focusPoint?.z ?? 0);
+  }
 }
 
 export async function getGraphData(
@@ -164,16 +207,23 @@ export async function getGraphData(
 
   const pgVector = await isPgVectorReady();
   const ids = nodes.map((node) => node.id);
-  const edgeRows = await fetchEdgesAmongIds(ids, kNearest);
+  const [edgeRows, projection] = await Promise.all([
+    fetchEdgesAmongIds(ids, kNearest),
+    fetchEmbeddingProjection(ids),
+  ]);
+  applyProjection(nodes, projection);
+  const links = normalizeLinks(edgeRows);
 
   return {
     nodes,
-    links: normalizeLinks(edgeRows),
+    links,
     meta: {
       nodeCount: nodes.length,
-      linkCount: edgeRows.length,
+      linkCount: links.length,
       pgVector,
       truncated,
+      layout: projection.size > 1 ? "pca" : "force",
+      edgeStrategy: links.length > 0 ? "semantic_knn" : "none",
     },
   };
 }
@@ -217,7 +267,7 @@ export async function getFocusGraphData(
     return {
       nodes: [],
       links: [],
-      meta: { nodeCount: 0, linkCount: 0, pgVector, truncated: false, focusId },
+      meta: { nodeCount: 0, linkCount: 0, pgVector, truncated: false, layout: "force", edgeStrategy: "none", focusId },
     };
   }
 
@@ -231,7 +281,7 @@ export async function getFocusGraphData(
     return {
       nodes: [focusNode],
       links: [],
-      meta: { nodeCount: 1, linkCount: 0, pgVector, truncated: false, focusId },
+      meta: { nodeCount: 1, linkCount: 0, pgVector, truncated: false, layout: "force", edgeStrategy: "none", focusId },
     };
   }
 
@@ -273,16 +323,23 @@ export async function getFocusGraphData(
 
   const allNodes = [focusNode, ...neighborNodes];
   const ids = allNodes.map((node) => node.id);
-  const edgeRows = await fetchEdgesAmongIds(ids, kNearest);
+  const [edgeRows, projection] = await Promise.all([
+    fetchEdgesAmongIds(ids, kNearest),
+    fetchEmbeddingProjection(ids),
+  ]);
+  applyProjection(allNodes, projection, focusId);
+  const links = normalizeLinks(edgeRows);
 
   return {
     nodes: allNodes,
-    links: normalizeLinks(edgeRows),
+    links,
     meta: {
       nodeCount: allNodes.length,
-      linkCount: edgeRows.length,
+      linkCount: links.length,
       pgVector,
       truncated: false,
+      layout: projection.size > 1 ? "pca" : "force",
+      edgeStrategy: links.length > 0 ? "semantic_knn" : "none",
       focusId,
     },
   };
