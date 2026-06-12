@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SignUpButton } from "@clerk/nextjs";
 import { ArrowRight, CheckCircle2, Search, Sparkles } from "lucide-react";
 
 const PROOF_POINTS = [
@@ -27,13 +27,15 @@ export function Hero() {
           </p>
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Link
-              href="/sign-up"
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              Start exploring free
-              <ArrowRight className="size-4" />
-            </Link>
+            <SignUpButton mode="modal">
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                Start exploring free
+                <ArrowRight className="size-4" />
+              </button>
+            </SignUpButton>
             <a
               href="#preview"
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border/70 bg-background/70 px-6 py-3 text-sm font-medium text-foreground transition hover:border-primary/40 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

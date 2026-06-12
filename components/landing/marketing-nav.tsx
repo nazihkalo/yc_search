@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { Show, SignInButton, SignUpButton } from "@clerk/nextjs";
 
 import { Button } from "../ui/button";
 
@@ -18,12 +21,21 @@ export function MarketingNav() {
           <a href="#pricing" className="transition hover:text-foreground">Pricing</a>
         </nav>
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-            <Link href="/sign-in">Sign in</Link>
-          </Button>
-          <Button asChild size="sm" className="rounded-full">
-            <Link href="/sign-up">Start free</Link>
-          </Button>
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                Sign in
+              </Button>
+            </SignInButton>
+            <SignUpButton mode="modal">
+              <Button size="sm" className="rounded-full">Start free</Button>
+            </SignUpButton>
+          </Show>
+          <Show when="signed-in">
+            <Button asChild size="sm" className="rounded-full">
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
+          </Show>
         </div>
       </div>
     </header>

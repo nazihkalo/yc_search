@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import { ArrowRight, Check, Clock3 } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -30,15 +30,17 @@ export function PricingTeaser() {
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button asChild size="lg" className="rounded-full">
-              <Link href="/sign-up">
+            <SignUpButton mode="modal">
+              <Button size="lg" className="rounded-full">
                 Start exploring free
                 <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline" className="rounded-full">
-              <Link href="/sign-in">Sign in</Link>
-            </Button>
+              </Button>
+            </SignUpButton>
+            <SignInButton mode="modal">
+              <Button size="lg" variant="outline" className="rounded-full">
+                Sign in
+              </Button>
+            </SignInButton>
           </div>
         </div>
 

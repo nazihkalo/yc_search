@@ -21,6 +21,12 @@ RUN python3 -m venv /opt/venv \
 
 COPY . .
 
+# NEXT_PUBLIC_* values get inlined into statically prerendered pages (e.g. the
+# landing page) during `next build`, so they must exist at build time. Railway
+# only exposes service variables to Dockerfile builds via declared ARGs.
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+
 RUN npm run build
 
 ENV NODE_ENV=production
