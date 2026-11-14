@@ -332,7 +332,10 @@ export function YearChart({
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const max = Math.max(1, ...years.map((y) => y.count));
-  const focus = years.find((y) => y.year === hovered) ?? years.at(-1);
+  // The newest year can hold only a handful of early-announced companies, so
+  // default to the latest year with a meaningful count instead.
+  const latestFull = [...years].reverse().find((y) => y.count >= max * 0.15) ?? years.at(-1);
+  const focus = years.find((y) => y.year === hovered) ?? latestFull;
   if (years.length === 0) return null;
 
   return (
@@ -352,7 +355,7 @@ export function YearChart({
       >
         {years.map((y) => {
           const isActive = activeKey === `batch:${y.year}`;
-          const isLatest = y.year === years.at(-1)?.year;
+          const isLatest = y.year === latestFull?.year;
           const names = batches.filter((b) => b.year === y.year).map((b) => b.batch);
           return (
             <button
