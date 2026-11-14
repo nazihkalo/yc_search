@@ -4,11 +4,10 @@ import Link from "next/link";
 import { ArrowRight, Loader2, Send } from "lucide-react";
 import { useCallback, useState } from "react";
 
-const SUGGESTIONS = [
-  "AI agents for accountants",
-  "Climate tech in S24",
-  "Has anyone built an LLM tutor for K-12?",
-  "B2B for plumbers and HVAC",
+const DEFAULT_SUGGESTIONS = [
+  "Has anyone built an AI tutor for K-12?",
+  "Who's building software for plumbers and HVAC?",
+  "Climate tech companies from the last two years",
 ];
 
 const STORAGE_KEY = "yc_pending_question";
@@ -26,7 +25,7 @@ type Citation = {
 
 type Phase = "idle" | "streaming" | "done" | "rate_limited" | "error";
 
-export function LandingChatPrompt() {
+export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { suggestions?: string[] }) {
   const [question, setQuestion] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [answer, setAnswer] = useState("");
@@ -36,6 +35,13 @@ export function LandingChatPrompt() {
   const submit = useCallback(async (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed || phase === "streaming") return;
+
+    // Carry the question through sign-up so the dashboard can answer it in full.
+    try {
+      window.localStorage.setItem(STORAGE_KEY, trimmed);
+    } catch {
+      // storage unavailable
+    }
 
     setPhase("streaming");
     setAnswer("");
@@ -123,9 +129,13 @@ export function LandingChatPrompt() {
   }`;
 
   return (
-    <div className="mt-10 w-full max-w-2xl">
+    <div className="w-full">
       <form onSubmit={onSubmit} className="relative">
+        <label htmlFor="landing-question" className="sr-only">
+          Ask a question about YC companies
+        </label>
         <textarea
+          id="landing-question"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={(event) => {
@@ -137,26 +147,23 @@ export function LandingChatPrompt() {
           rows={2}
           maxLength={500}
           disabled={phase === "streaming"}
-          placeholder="Ask anything: 'Has anyone built X?' • 'Show me Spring 2026 fintech' • 'Climate tech founders with prior exits'"
-          className="w-full resize-none rounded-lg border border-border/60 bg-card/70 px-5 py-4 pr-14 text-left text-base leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20"
+          placeholder="Has anyone in YC built an AI bookkeeper for restaurants?"
+          className="block w-full resize-none rounded-lg border border-foreground/20 bg-background px-4 py-3.5 pr-14 text-base leading-relaxed text-foreground shadow-[0_1px_0_0_var(--border)] placeholder:text-muted-foreground focus:border-foreground/50 focus:outline-none focus:ring-4 focus:ring-primary/15"
         />
         <button
           type="submit"
           disabled={phase === "streaming" || !question.trim()}
-          className="absolute bottom-3 right-3 inline-flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          className="absolute bottom-3 right-3 inline-flex size-9 items-center justify-center rounded-md bg-foreground text-background transition hover:bg-primary disabled:opacity-30"
           aria-label="Ask"
         >
-          {phase === "streaming" ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Send className="size-4" />
-          )}
+          {phase === "streaming" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
         </button>
       </form>
 
       {phase === "idle" ? (
-        <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
-          {SUGGESTIONS.map((s) => (
+        <div className="mt-3 flex flex-col items-start gap-1.5 text-sm">
+          <span className="text-xs text-muted-foreground">Try one, no account needed:</span>
+          {suggestions.map((s) => (
             <button
               key={s}
               type="button"
@@ -164,66 +171,51 @@ export function LandingChatPrompt() {
                 setQuestion(s);
                 void submit(s);
               }}
-              className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 transition hover:border-primary/40 hover:text-foreground"
+              className="group inline-flex items-center gap-1.5 text-left text-foreground/80 underline decoration-border underline-offset-4 transition hover:text-foreground hover:decoration-primary"
             >
               {s}
+              <ArrowRight className="size-3.5 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
             </button>
           ))}
         </div>
       ) : null}
 
       {(phase === "streaming" || phase === "done") && (answer || citations.length > 0) ? (
-        <div className="mt-6 space-y-4 text-left">
+        <div className="mt-6 space-y-5 text-left" aria-live="polite">
           {answer ? (
-            <div className="rounded-lg border border-border/60 bg-card/60 p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Answer
-              </p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-foreground">{answer}</p>
-            </div>
+            <p className="whitespace-pre-wrap border-l-2 border-primary pl-4 text-[15px] leading-7 text-foreground">
+              {answer}
+            </p>
           ) : null}
 
           {citations.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Cited companies
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {citations.map((citation) => (
-                  <div
-                    key={citation.id}
-                    className="rounded-lg border border-border/60 bg-card/40 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-semibold text-foreground">{citation.name}</div>
-                      {citation.batch ? (
-                        <span className="shrink-0 rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-medium tracking-wide text-foreground/70">
-                          {citation.batch}
-                        </span>
-                      ) : null}
-                    </div>
+            <ul className="divide-y divide-border border-y border-border">
+              {citations.map((citation) => (
+                <li key={citation.id} className="flex items-baseline justify-between gap-4 py-2.5">
+                  <div className="min-w-0">
+                    <span className="font-medium text-foreground">{citation.name}</span>
                     {citation.oneLiner ? (
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                        {citation.oneLiner}
-                      </p>
+                      <span className="text-muted-foreground"> — {citation.oneLiner}</span>
                     ) : null}
                   </div>
-                ))}
-              </div>
-            </div>
+                  {citation.batch ? (
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">{citation.batch}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           ) : null}
 
           {phase === "done" ? (
-            <div className="rounded-lg border border-primary/40 bg-primary/5 p-5 text-center">
-              <p className="text-sm text-foreground/90">
-                That&apos;s your free preview. Sign up to keep asking, drive the table and graph from
-                chat, and see every citation.
+            <div className="flex flex-col gap-3 rounded-lg bg-muted px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-foreground">
+                Sign up to keep going. Your question carries over, with full company and founder cards.
               </p>
               <Link
                 href={signUpHref}
-                className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition hover:bg-primary"
               >
-                Sign up free
+                Continue free
                 <ArrowRight className="size-4" />
               </Link>
             </div>
@@ -232,24 +224,24 @@ export function LandingChatPrompt() {
       ) : null}
 
       {phase === "rate_limited" ? (
-        <div className="mt-6 rounded-lg border border-primary/40 bg-primary/5 p-5 text-center">
-          <p className="text-sm text-foreground/90">
-            You&apos;ve already used your free preview. Sign up to keep asking. Your question is saved.
+        <div className="mt-6 flex flex-col gap-3 rounded-lg bg-muted px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-foreground">
+            You&apos;ve used your free question. Sign up and we&apos;ll answer this one first.
           </p>
           <Link
             href={signUpHref}
-            className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition hover:bg-primary"
           >
-            Sign up free
+            Continue free
             <ArrowRight className="size-4" />
           </Link>
         </div>
       ) : null}
 
       {phase === "error" && errorMessage ? (
-        <div className="mt-6 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+        <p className="mt-4 text-sm text-red-600 dark:text-red-400" role="alert">
           {errorMessage}
-        </div>
+        </p>
       ) : null}
     </div>
   );

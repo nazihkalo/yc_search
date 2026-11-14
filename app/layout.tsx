@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import { dark } from "@clerk/themes";
+import { shadcn } from "@clerk/themes";
 
 import { ThemeProvider } from "../components/providers/theme-provider";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -47,10 +47,13 @@ export default function RootLayout({
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
       appearance={{
-        baseTheme: dark,
+        // shadcn reads the app's CSS variables, so Clerk follows light/dark mode.
+        baseTheme: shadcn,
         variables: {
-          colorPrimary: "oklch(0.73 0.135 42)",
+          colorPrimary: "var(--foreground)",
+          colorPrimaryForeground: "var(--background)",
           fontFamily: "var(--font-ui-sans)",
+          borderRadius: "0.5rem",
         },
       }}
     >

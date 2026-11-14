@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronsRight, History, Plus, Trash2, X } from "lucide-react";
+import { History, Plus, Trash2, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { cn } from "../../lib/utils";
@@ -13,7 +13,7 @@ type Thread = {
   createdAt: string;
 };
 
-export function ChatToolbar({ onCollapse }: { onCollapse?: () => void } = {}) {
+export function ChatToolbar({ trailing }: { trailing?: React.ReactNode } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("thread");
@@ -114,15 +114,15 @@ export function ChatToolbar({ onCollapse }: { onCollapse?: () => void } = {}) {
   const activeThread = threads.find((t) => t.id === activeId);
 
   return (
-    <div className="relative flex shrink-0 items-center justify-between gap-2 border-b border-border/40 bg-background/40 px-3 py-1.5">
+    <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
       <div className="flex min-w-0 items-center gap-1.5">
         <button
           type="button"
           onClick={() => setHistoryOpen((v) => !v)}
           title="Chat history"
           className={cn(
-            "inline-flex size-7 items-center justify-center rounded-md border border-border/60 bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:text-primary",
-            historyOpen && "border-primary/40 bg-primary/10 text-primary",
+            "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground",
+            historyOpen && "bg-muted text-foreground",
           )}
         >
           <History className="size-3.5" />
@@ -136,30 +136,21 @@ export function ChatToolbar({ onCollapse }: { onCollapse?: () => void } = {}) {
           type="button"
           onClick={() => newThread()}
           title="New chat"
-          className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-foreground/80 transition hover:border-primary/40 hover:text-primary"
+          className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <Plus className="size-3" />
-          New
+          New chat
         </button>
-        {onCollapse ? (
-          <button
-            type="button"
-            onClick={onCollapse}
-            title="Collapse chat"
-            className="inline-flex size-7 items-center justify-center rounded-md border border-border/60 bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:text-primary"
-          >
-            <ChevronsRight className="size-3.5" />
-          </button>
-        ) : null}
+        {trailing}
       </div>
 
       {historyOpen ? (
         <div
           ref={popoverRef}
-          className="absolute left-2 right-2 top-[calc(100%+4px)] z-30 max-h-[60vh] overflow-hidden rounded-lg border border-border/60 bg-popover shadow-xl"
+          className="absolute left-2 top-[calc(100%+4px)] z-30 w-[min(22rem,calc(100%-1rem))] max-h-[60vh] overflow-hidden rounded-lg border border-border/60 bg-popover shadow-xl"
         >
           <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="text-xs font-medium text-muted-foreground">
               Chat history
             </span>
             <button
