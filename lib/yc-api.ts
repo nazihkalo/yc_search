@@ -3,13 +3,12 @@ import { z } from "zod";
 
 import type { YcCompany } from "./types";
 
-const ALGOLIA_APP_ID = "45BWZJ1SGC";
-const ALGOLIA_BASE_URL = `https://${ALGOLIA_APP_ID.toLowerCase()}-dsn.algolia.net/1/indexes/*/queries`;
+const DEFAULT_ALGOLIA_APP_ID = "45BWZJ1SGC";
 const ALGOLIA_INDEX = "YCCompany_By_Launch_Date_production";
 const ALGOLIA_AGENT = "Algolia for JavaScript (3.35.1); Browser; JS Helper (3.16.1)";
-
-const DEFAULT_ALGOLIA_API_KEY =
-  "NzllNTY5MzJiZGM2OTY2ZTQwMDEzOTNhYWZiZGRjODlhYzVkNjBmOGRjNzJiMWM4ZTU0ZDlhYTZjOTJiMjlhMWFuYWx5dGljc1RhZ3M9eWNkYyZyZXN0cmljdEluZGljZXM9WUNDb21wYW55X3Byb2R1Y3Rpb24lMkNZQ0NvbXBhbnlfQnlfTGF1bmNoX0RhdGVfcHJvZHVjdGlvbiZ0YWdGaWx0ZXJzPSU1QiUyMnljZGNfcHVibGljJTIyJTVE";
+const YC_DIRECTORY_URL = "https://www.ycombinator.com/companies";
+const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 
 const FACETS_PARAM =
   "%5B%22app_answers%22%2C%22app_video_public%22%2C%22batch%22%2C%22demo_day_video_public%22%2C%22highlight_black%22%2C%22highlight_latinx%22%2C%22highlight_women%22%2C%22industries%22%2C%22isHiring%22%2C%22nonprofit%22%2C%22question_answers%22%2C%22regions%22%2C%22subindustry%22%2C%22tags%22%2C%22top_company%22%5D";
@@ -62,19 +61,45 @@ type AlgoliaMultiResponse<T> = {
   }>;
 };
 
-function getAlgoliaApiKey() {
-  const override = process.env.YC_ALGOLIA_API_KEY?.trim();
-  return override && override.length > 0 ? override : DEFAULT_ALGOLIA_API_KEY;
+type AlgoliaCredentials = { appId: string; apiKey: string };
+
+let cachedCredentials: AlgoliaCredentials | null = null;
+
+/**
+ * YC's directory uses short-lived secured Algolia keys (they embed `validUntil`
+ * and rotate roughly daily), so a hardcoded key stops working. Scrape the
+ * current key from `window.AlgoliaOpts` on the public directory page instead.
+ * `YC_ALGOLIA_API_KEY` still works as a manual override.
+ */
+async function fetchAlgoliaCredentials(): Promise<AlgoliaCredentials> {
+  const response = await fetch(YC_DIRECTORY_URL, {
+    headers: { "User-Agent": BROWSER_USER_AGENT, Accept: "text/html" },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load YC directory page (${response.status}).`);
+  }
+  const html = await response.text();
+  const match = html.match(/window\.AlgoliaOpts\s*=\s*(\{[^;]*?\});/);
+  if (!match) {
+    throw new Error("Could not find window.AlgoliaOpts on the YC directory page.");
+  }
+  const opts = JSON.parse(match[1]) as { app?: string; key?: string };
+  if (!opts.key) {
+    throw new Error("window.AlgoliaOpts on the YC directory page has no key.");
+  }
+  return { appId: opts.app || DEFAULT_ALGOLIA_APP_ID, apiKey: opts.key };
 }
 
-function buildAlgoliaUrl() {
-  // Build manually to avoid re-encoding the already-URL-safe API key.
-  const parts = [
-    `x-algolia-agent=${encodeURIComponent(ALGOLIA_AGENT)}`,
-    `x-algolia-application-id=${ALGOLIA_APP_ID}`,
-    `x-algolia-api-key=${getAlgoliaApiKey()}`,
-  ];
-  return `${ALGOLIA_BASE_URL}?${parts.join("&")}`;
+async function getAlgoliaCredentials(forceRefresh = false): Promise<AlgoliaCredentials> {
+  const override = process.env.YC_ALGOLIA_API_KEY?.trim();
+  if (override) {
+    return { appId: DEFAULT_ALGOLIA_APP_ID, apiKey: override };
+  }
+  if (!cachedCredentials || forceRefresh) {
+    cachedCredentials = await fetchAlgoliaCredentials();
+  }
+  return cachedCredentials;
 }
 
 function slugifyBatch(value: string) {
@@ -87,18 +112,31 @@ function slugifyBatch(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-async function algoliaQuery<T>(params: string): Promise<AlgoliaMultiResponse<T>> {
-  const response = await fetch(buildAlgoliaUrl(), {
+async function algoliaQuery<T>(params: string, retried = false): Promise<AlgoliaMultiResponse<T>> {
+  const { appId, apiKey } = await getAlgoliaCredentials();
+  const url =
+    `https://${appId.toLowerCase()}-dsn.algolia.net/1/indexes/*/queries` +
+    `?x-algolia-agent=${encodeURIComponent(ALGOLIA_AGENT)}`;
+
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      "X-Algolia-Application-Id": appId,
+      "X-Algolia-API-Key": apiKey,
     },
     body: JSON.stringify({
       requests: [{ indexName: ALGOLIA_INDEX, params }],
     }),
     cache: "no-store",
   });
+
+  // Key may have expired mid-run; refresh once from the directory page.
+  if ((response.status === 401 || response.status === 403) && !retried && !process.env.YC_ALGOLIA_API_KEY?.trim()) {
+    await getAlgoliaCredentials(true);
+    return algoliaQuery<T>(params, true);
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
