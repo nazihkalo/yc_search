@@ -147,7 +147,7 @@ export function ChatToolbar({ trailing }: { trailing?: React.ReactNode } = {}) {
       {historyOpen ? (
         <div
           ref={popoverRef}
-          className="absolute left-2 top-[calc(100%+4px)] z-30 w-[min(22rem,calc(100%-1rem))] max-h-[60vh] overflow-hidden rounded-lg border border-border/60 bg-popover shadow-xl"
+          className="absolute left-2 top-[calc(100%+4px)] z-50 w-[min(22rem,calc(100%-1rem))] max-h-[60vh] overflow-hidden rounded-lg border border-border/60 bg-popover shadow-xl"
         >
           <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">

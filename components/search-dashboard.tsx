@@ -462,6 +462,13 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     if (selectedCompanyId) {
       params.set("company", String(selectedCompanyId));
     }
+    // `thread` belongs to ChatPersistence, not the search state. Read it from
+    // the live URL so rewriting the filters never drops the open chat thread
+    // (which would make ChatPersistence start a duplicate thread).
+    const thread = new URLSearchParams(window.location.search).get("thread");
+    if (thread) {
+      params.set("thread", thread);
+    }
 
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [baseQueryString, page, pathname, router, selectedCompanyId, tablePageSize, view]);
