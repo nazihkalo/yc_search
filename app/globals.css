@@ -1,52 +1,58 @@
 @import "tailwindcss";
 
+/* Theme is driven by next-themes' .dark class, not the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+@import "@clerk/themes/shadcn.css";
+
 :root {
   color-scheme: light;
-  --background: oklch(0.985 0.003 245);
-  --foreground: oklch(0.145 0.01 245);
-  --card: oklch(0.975 0.004 245);
-  --card-foreground: oklch(0.145 0.01 245);
-  --popover: oklch(0.975 0.004 245);
-  --popover-foreground: oklch(0.145 0.01 245);
-  --primary: oklch(0.69 0.135 42);
-  --primary-foreground: oklch(0.985 0.004 245);
-  --secondary: oklch(0.94 0.006 245);
-  --secondary-foreground: oklch(0.22 0.01 245);
-  --muted: oklch(0.95 0.005 245);
-  --muted-foreground: oklch(0.48 0.01 245);
-  --accent: oklch(0.94 0.008 245);
-  --accent-foreground: oklch(0.2 0.01 245);
-  --border: oklch(0.88 0.007 245);
-  --input: oklch(0.88 0.007 245);
-  --ring: oklch(0.69 0.135 42);
-  --chart-1: oklch(0.69 0.135 42);
+  --background: oklch(0.985 0.003 75);
+  --foreground: oklch(0.145 0.008 75);
+  --card: oklch(0.975 0.004 75);
+  --card-foreground: oklch(0.145 0.008 75);
+  --popover: oklch(0.975 0.004 75);
+  --popover-foreground: oklch(0.145 0.008 75);
+  --primary: oklch(0.66 0.19 42);
+  --primary-foreground: oklch(0.985 0.004 75);
+  --secondary: oklch(0.94 0.006 75);
+  --secondary-foreground: oklch(0.22 0.008 75);
+  --muted: oklch(0.95 0.005 75);
+  --muted-foreground: oklch(0.48 0.008 75);
+  --accent: oklch(0.94 0.008 75);
+  --accent-foreground: oklch(0.2 0.008 75);
+  --border: oklch(0.88 0.007 75);
+  --input: oklch(0.88 0.007 75);
+  --ring: oklch(0.66 0.19 42);
+  --destructive: oklch(0.55 0.2 27);
+  --chart-1: oklch(0.66 0.19 42);
   --chart-2: oklch(0.7 0.16 185);
   --chart-3: oklch(0.73 0.16 110);
   --chart-4: oklch(0.67 0.19 20);
   --chart-5: oklch(0.65 0.18 300);
-  --radius: 0.75rem;
+  --radius: 0.5rem;
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.155 0.008 245);
-  --foreground: oklch(0.94 0.006 245);
-  --card: oklch(0.205 0.008 245);
-  --card-foreground: oklch(0.94 0.006 245);
-  --popover: oklch(0.205 0.008 245);
-  --popover-foreground: oklch(0.94 0.006 245);
-  --primary: oklch(0.73 0.135 42);
-  --primary-foreground: oklch(0.15 0.008 245);
-  --secondary: oklch(0.255 0.008 245);
-  --secondary-foreground: oklch(0.91 0.006 245);
-  --muted: oklch(0.235 0.007 245);
-  --muted-foreground: oklch(0.68 0.008 245);
-  --accent: oklch(0.285 0.009 245);
-  --accent-foreground: oklch(0.955 0.005 245);
-  --border: oklch(0.315 0.008 245);
-  --input: oklch(0.315 0.008 245);
-  --ring: oklch(0.73 0.135 42);
-  --chart-1: oklch(0.73 0.135 42);
+  --background: oklch(0.155 0.008 75);
+  --foreground: oklch(0.94 0.006 75);
+  --card: oklch(0.205 0.008 75);
+  --card-foreground: oklch(0.94 0.006 75);
+  --popover: oklch(0.205 0.008 75);
+  --popover-foreground: oklch(0.94 0.006 75);
+  --primary: oklch(0.72 0.17 45);
+  --primary-foreground: oklch(0.15 0.008 75);
+  --secondary: oklch(0.255 0.008 75);
+  --secondary-foreground: oklch(0.91 0.006 75);
+  --muted: oklch(0.235 0.007 75);
+  --muted-foreground: oklch(0.68 0.008 75);
+  --accent: oklch(0.285 0.008 75);
+  --accent-foreground: oklch(0.955 0.005 75);
+  --border: oklch(0.315 0.008 75);
+  --input: oklch(0.315 0.008 75);
+  --ring: oklch(0.72 0.17 45);
+  --destructive: oklch(0.68 0.19 25);
+  --chart-1: oklch(0.72 0.17 45);
   --chart-2: oklch(0.78 0.16 185);
   --chart-3: oklch(0.8 0.14 110);
   --chart-4: oklch(0.76 0.16 20);
@@ -71,6 +77,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -97,23 +104,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), sans-serif;
-  background-image:
-    linear-gradient(to bottom, color-mix(in oklch, var(--background) 96%, var(--primary) 4%), var(--background) 34rem),
-    linear-gradient(90deg, color-mix(in oklch, var(--border) 22%, transparent) 1px, transparent 1px),
-    linear-gradient(color-mix(in oklch, var(--border) 18%, transparent) 1px, transparent 1px);
-  background-size: auto, 72px 72px, 72px 72px;
 }
 
 ::selection {
   background: color-mix(in oklch, var(--primary) 32%, transparent);
   color: var(--foreground);
-}
-
-.dark body {
-  background-image:
-    linear-gradient(to bottom, color-mix(in oklch, var(--background) 94%, var(--primary) 6%), var(--background) 36rem),
-    linear-gradient(90deg, color-mix(in oklch, var(--border) 28%, transparent) 1px, transparent 1px),
-    linear-gradient(color-mix(in oklch, var(--border) 24%, transparent) 1px, transparent 1px);
 }
 
 a {
@@ -181,16 +176,9 @@ a {
   box-shadow: var(--copilot-kit-shadow-sm);
 }
 
-/* Hide CopilotKit branding (footer + inspector) */
-.poweredBy,
-.poweredByContainer .poweredBy,
-.copilotKitInputContainer.poweredByContainer {
-  padding-bottom: 0 !important;
-}
-.poweredBy {
-  display: none !important;
-}
-copilotkit-inspector {
+/* CopilotKit's dev inspector (renamed to cpk-web-inspector in 1.56). */
+copilotkit-inspector,
+cpk-web-inspector {
   display: none !important;
 }
 
@@ -207,4 +195,29 @@ copilotkit-inspector {
 .copilotKitMessages {
   min-height: 0;
   overscroll-behavior: contain;
+}
+
+/* Chat-first layout: keep messages and input at a readable width in the
+   wide center column. */
+.chat-centered .copilotKitMessagesContainer,
+.chat-centered .copilotKitInput {
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
+}
+.chat-centered .copilotKitInputContainer {
+  padding-inline: 1rem;
+}
+/* The welcome screen replaces the empty message list. */
+.chat-empty .copilotKitMessages {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

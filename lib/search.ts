@@ -1211,7 +1211,7 @@ type BatchAggregate = {
   categoryCounts: Map<string, number>;
 };
 
-function batchSortKey(batch: string): { year: number | null; seasonOrder: number } {
+export function batchSortKey(batch: string): { year: number | null; seasonOrder: number } {
   const compactBatchMatch = batch.match(/^([WSF])(\d{2})$/i);
   if (compactBatchMatch) {
     const season = compactBatchMatch[1].toUpperCase();

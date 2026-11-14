@@ -7,18 +7,20 @@ import { Button } from "./ui/button";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const isDark = resolvedTheme !== "light";
 
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="ghost"
       size="icon"
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="rounded-full"
+      // The saved theme is only known on the client, so render both icons and
+      // let the .dark class pick one; that keeps server and client HTML identical.
+      aria-label="Toggle light and dark mode"
+      onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}
+      className="size-8 rounded-md text-muted-foreground hover:text-foreground"
     >
-      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+      <Sun className="hidden size-4 dark:block" />
+      <Moon className="size-4 dark:hidden" />
     </Button>
   );
 }

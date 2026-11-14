@@ -5,16 +5,12 @@ import Link from "next/link";
 import {
   ArrowUpRight,
   BarChart3,
-  Bot,
   Building2,
-  CircleDot,
-  Database,
   Filter,
   LayoutGrid,
   Network,
   Rows3,
   Search,
-  Sparkles,
   TableProperties,
   X,
 } from "lucide-react";
@@ -23,6 +19,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
 import { CompanyDetailPanel } from "./dashboard/company-detail-panel";
 import { DashboardCopilotBridge } from "./dashboard/copilot-actions";
+import { useWorkspace } from "./dashboard/workspace-context";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
 import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
 import { CompaniesForceGraphTab } from "./graph/companies-force-graph-lazy";
@@ -228,6 +225,55 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     return Number.isFinite(raw) && raw !== 0 ? raw : null;
   });
   const [highlightCompanyId, setHighlightCompanyId] = useState<number | null>(null);
+
+  const workspace = useWorkspace();
+  const revealResults = workspace?.openDrawer;
+  const registerFilterApi = workspace?.registerFilterApi;
+  useEffect(() => {
+    if (!registerFilterApi) return;
+    registerFilterApi({
+      setQuery: (q) => {
+        setPage(1);
+        setQuery(q);
+      },
+      setBatches: (v) => {
+        setPage(1);
+        setBatches(v);
+      },
+      setIndustries: (v) => {
+        setPage(1);
+        setIndustries(v);
+      },
+      setTags: (v) => {
+        setPage(1);
+        setTags(v);
+      },
+      setIsHiring: (v) => {
+        setPage(1);
+        setIsHiring(v);
+      },
+      clearFilters: () => {
+        setPage(1);
+        setQuery("");
+        setTags([]);
+        setIndustries([]);
+        setBatches([]);
+        setYears([]);
+        setRegions([]);
+        setStages([]);
+        setSources([]);
+        setIsHiring(false);
+        setNonprofit(false);
+        setTopCompany(false);
+        setVendorCategory("");
+      },
+      showResults: () => {
+        setActiveTab("results");
+        setGraphOpen(false);
+      },
+    });
+    return () => registerFilterApi(null);
+  }, [registerFilterApi]);
 
   // When the detail modal is open: lock scroll everywhere + dismiss on Escape.
   useEffect(() => {
@@ -700,17 +746,9 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
       : []),
   ];
   const visibleCount = results.results.length;
-  const queryScopeLabel = activeTab === "vendors"
-    ? query.trim()
-      ? `Vendor search: ${query.trim()}`
-      : "All vendors"
-    : query.trim()
-      ? query.trim()
-      : "All indexed companies";
   const searchPlaceholder = activeTab === "vendors"
     ? "Search vendors by name, domain, or category"
     : "Search companies by name, idea, founder, market, or vendor";
-  const primaryMetricLabel = activeTab === "vendors" ? "Vendors" : "Matched";
   const primaryMetricValue = activeTab === "vendors"
     ? (vendorAnalytics?.topVendors.length ?? 0).toLocaleString()
     : results.total.toLocaleString();
@@ -719,8 +757,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     : view === "table"
       ? `${results.page} / ${totalPages} pages`
       : `${visibleCount.toLocaleString()} loaded`;
-  const activeTabLabel =
-    activeTab === "results" ? "Results" : activeTab === "analytics" ? "Analytics" : "Vendors";
   const sourceOptions = facets?.sources.length
     ? facets.sources.map((source) => ({
         value: source.value,
@@ -730,7 +766,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     : DEFAULT_SOURCE_OPTIONS;
 
   return (
-    <div className="w-full px-3 py-4 sm:px-5 lg:px-6">
+    <div className="w-full">
       {copilotEnabled ? (
         <DashboardCopilotBridge
           state={{
@@ -770,60 +806,82 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
           }}
           setters={{
             setQuery: (q) => {
+              revealResults?.();
               setPage(1);
               setQuery(q);
             },
             setTags: (v) => {
+              revealResults?.();
               setPage(1);
               setTags(v);
             },
             setIndustries: (v) => {
+              revealResults?.();
               setPage(1);
               setIndustries(v);
             },
             setBatches: (v) => {
+              revealResults?.();
               setPage(1);
               setBatches(v);
             },
             setStages: (v) => {
+              revealResults?.();
               setPage(1);
               setStages(v);
             },
             setRegions: (v) => {
+              revealResults?.();
               setPage(1);
               setRegions(v);
             },
             setSources: (v) => {
+              revealResults?.();
               setPage(1);
               setSources(v);
             },
             setYears: (v) => {
+              revealResults?.();
               setPage(1);
               setYears(v);
             },
             setIsHiring: (v) => {
+              revealResults?.();
               setPage(1);
               setIsHiring(v);
             },
             setNonprofit: (v) => {
+              revealResults?.();
               setPage(1);
               setNonprofit(v);
             },
             setTopCompany: (v) => {
+              revealResults?.();
               setPage(1);
               setTopCompany(v);
             },
             setSort: (v) => {
+              revealResults?.();
               setPage(1);
               setSort(v);
             },
-            setView,
-            setActiveTab,
+            setView: (v) => {
+              revealResults?.();
+              setView(v);
+            },
+            setActiveTab: (v) => {
+              revealResults?.();
+              setActiveTab(v);
+            },
             setVendorCategory: (v) => {
+              revealResults?.();
               setPage(1);
               setVendorCategory(v);
             },
-            setGraphOpen,
+            setGraphOpen: (v) => {
+              if (v) revealResults?.();
+              setGraphOpen(v);
+            },
             setSelectedCompanyId,
             setHighlightCompanyId,
           }}
@@ -852,42 +910,8 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
       ) : null}
       <div className="contents">
       <div className="space-y-5">
-        <section className="overflow-hidden rounded-lg border border-border/60 bg-card/80 shadow-sm shadow-black/10">
-          <div className="flex flex-col gap-4 p-4 sm:p-5 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                <CircleDot className="size-3.5 text-primary" />
-                Command center
-              </div>
-              <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                Startup intelligence workspace
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Company, founder, vendor, and category signals in one research surface.
-              </p>
-            </div>
-
-            <div className="grid overflow-hidden rounded-lg border border-border/60 bg-background/45 sm:min-w-[460px] sm:grid-cols-3">
-              <DashboardMetric
-                icon={<Database className="size-3.5" />}
-                label={primaryMetricLabel}
-                value={primaryMetricValue}
-              />
-              <DashboardMetric
-                icon={<Filter className="size-3.5" />}
-                label="Filters"
-                value={activeFilters.length.toLocaleString()}
-              />
-              <DashboardMetric
-                icon={<Bot className="size-3.5" />}
-                label="View"
-                value={activeTabLabel}
-              />
-            </div>
-          </div>
-
-          <div className="border-t border-border/60 bg-background/35 p-3 sm:p-4">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+        <section className="space-y-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <input
@@ -911,7 +935,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
                     }
                   }}
                   placeholder={searchPlaceholder}
-                  className="h-12 w-full rounded-md border border-border/70 bg-background/80 py-2 pl-10 pr-9 text-base text-foreground shadow-inner shadow-black/5 placeholder:text-muted-foreground/55 focus:border-primary/45 focus:outline-none focus:ring-2 focus:ring-ring/35"
+                  className="h-10 w-full rounded-md border border-border bg-background py-2 pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/30"
                 />
                 {draftQuery ? (
                   <button
@@ -936,18 +960,14 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
                 onToggleSource={toggleSourceFilter}
                 onClearSources={clearSourceFilters}
               />
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2.5 py-1">
-                <Sparkles className="size-3.5 text-primary" />
-                {queryScopeLabel}
-              </span>
-              <span className="rounded-md bg-muted/60 px-2.5 py-1">
-                {browseProgressLabel}
-              </span>
-            </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{primaryMetricValue}</span>{" "}
+            {activeTab === "vendors" ? "vendors" : results.total === 1 ? "company" : "companies"}
+            {query.trim() ? <> matching &ldquo;{query.trim()}&rdquo;</> : null}
+            <span className="mx-1.5 text-border">/</span>
+            {browseProgressLabel}
+          </p>
         </section>
 
         {activeFilters.length > 0 ? (
@@ -1360,28 +1380,6 @@ function SourceTagFilters({
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function DashboardMetric({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="border-b border-border/60 px-3.5 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-        <span className="text-primary">{icon}</span>
-        {label}
-      </div>
-      <p className="mt-1.5 truncate text-base font-semibold tracking-tight text-foreground">
-        {value}
-      </p>
     </div>
   );
 }
