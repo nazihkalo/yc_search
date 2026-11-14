@@ -1,39 +1,26 @@
 import { Suspense } from "react";
 import { SignUp } from "@clerk/nextjs";
 
+import { AuthLayout, authAppearance } from "../../../components/auth/auth-layout";
 import { AuthRedirectGuard } from "../../../components/auth/auth-redirect-guard";
 import { StorePendingQuestion } from "../../../components/auth/store-pending-question";
 
+export const dynamic = "force-dynamic";
+
 export default function SignUpPage() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+    <AuthLayout title="Start exploring" subtitle="Free while in beta. No credit card.">
       <AuthRedirectGuard />
       <Suspense fallback={null}>
         <StorePendingQuestion />
       </Suspense>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-40 left-1/2 size-[680px] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl"
+      <SignUp
+        routing="path"
+        path="/sign-up"
+        signInUrl="/sign-in"
+        fallbackRedirectUrl="/dashboard"
+        appearance={authAppearance}
       />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full bg-primary/10 blur-3xl"
-      />
-      <div className="relative">
-        <SignUp
-          routing="path"
-          path="/sign-up"
-          signInUrl="/sign-in"
-          fallbackRedirectUrl="/dashboard"
-          appearance={{
-            elements: {
-              rootBox: "w-full",
-              card: "bg-card/80 border border-border/60 shadow-xl shadow-black/30 backdrop-blur",
-              headerTitle: "font-semibold tracking-[-0.03em]",
-            },
-          }}
-        />
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
