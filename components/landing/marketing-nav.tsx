@@ -3,38 +3,55 @@
 import Link from "next/link";
 import { Show, SignInButton, SignUpButton } from "@clerk/nextjs";
 
-import { Button } from "../ui/button";
+import { ThemeToggle } from "../theme-toggle";
+
+export function Wordmark({ className = "" }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-baseline text-[17px] font-semibold tracking-[-0.03em] ${className}`}>
+      yc<span className="px-[1px] text-primary">/</span>search
+    </span>
+  );
+}
 
 export function MarketingNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border/30 bg-background/60 backdrop-blur-md">
-      <div className="mx-auto flex h-14 w-full max-w-[1280px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link
-          href="/"
-          className="inline-flex items-baseline gap-0.5 text-xl font-semibold tracking-[-0.04em] text-foreground transition hover:text-primary"
-        >
-          yc<span className="text-primary">·</span>search
+    <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
+      <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+        <Link href="/" className="text-foreground" aria-label="yc search home">
+          <Wordmark />
         </Link>
-        <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
-          <a href="#features" className="transition hover:text-foreground">Features</a>
-          <a href="#preview" className="transition hover:text-foreground">Product</a>
-          <a href="#pricing" className="transition hover:text-foreground">Pricing</a>
+        <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex" aria-label="Page sections">
+          <a href="#data" className="transition hover:text-foreground">The data</a>
+          <a href="#latest" className="transition hover:text-foreground">Latest batch</a>
+          <a href="#how" className="transition hover:text-foreground">How it works</a>
         </nav>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle />
           <Show when="signed-out">
             <SignInButton mode="modal">
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+              <button
+                type="button"
+                className="h-8 rounded-md px-3 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
                 Sign in
-              </Button>
+              </button>
             </SignInButton>
             <SignUpButton mode="modal">
-              <Button size="sm" className="rounded-full">Start free</Button>
+              <button
+                type="button"
+                className="h-8 rounded-md bg-foreground px-3 text-sm font-medium text-background transition hover:bg-primary"
+              >
+                Get started
+              </button>
             </SignUpButton>
           </Show>
           <Show when="signed-in">
-            <Button asChild size="sm" className="rounded-full">
-              <Link href="/dashboard">Dashboard</Link>
-            </Button>
+            <Link
+              href="/dashboard"
+              className="inline-flex h-8 items-center rounded-md bg-foreground px-3 text-sm font-medium text-background transition hover:bg-primary"
+            >
+              Open app
+            </Link>
           </Show>
         </div>
       </div>
