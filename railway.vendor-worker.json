@@ -4,7 +4,7 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "npm run db:migrate && npm run vendor:worker -- --continuous --limit=25",
+    "startCommand": "npm run vendor:worker -- --continuous --limit=25",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
