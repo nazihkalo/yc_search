@@ -10,6 +10,7 @@ import { scrapeCompanies, type ScrapeSummary } from "../scripts/scrape-companies
 import { scrapeYcCompanyPages, type YcProfileScrapeSummary } from "../scripts/scrape-yc-company-pages";
 import { syncForbesAi50Companies, type SyncForbesAi50Summary } from "../scripts/sync-forbes-ai50";
 import { syncYcCompanies, type SyncYcSummary } from "../scripts/sync-yc";
+import { getVendorQueueStatus } from "./vendor-jobs";
 
 const SYNC_LOCK_KEY = "yc_search_incremental_sync";
 
@@ -178,7 +179,10 @@ export async function runIncrementalSync(options?: {
             const githubResult = await enrichFoundersGithub();
             const founderSitesResult = await crawlFounderSites();
             const exaResult = await enrichFoundersExa();
-            const vendorsResult = await enrichCompanyVendors({ limit: scrapeLimit });
+            const vendorsResult = process.env.VENDOR_DEDICATED_WORKER === "1"
+              ? { requested: 0, successCount: 0, failureCount: 0, relationshipsUpserted: 0,
+                  foundVendorsCount: 0, noPublicDisclosureCount: 0, noWebsiteCount: 0 }
+              : await enrichCompanyVendors({ limit: scrapeLimit });
             const embedResult = await embedCompanies({ limit: embedLimit });
             return {
               yc: ycResult,
@@ -404,7 +408,9 @@ export async function getLatestSyncStatus() {
           COUNT(*) FILTER (WHERE needs_website_scrape = 1 OR needs_yc_profile_scrape = 1) AS pending_scrape,
           COUNT(*) FILTER (WHERE needs_website_scrape = 1) AS pending_website_scrape,
           COUNT(*) FILTER (WHERE needs_yc_profile_scrape = 1) AS pending_yc_profile_scrape,
-          COUNT(*) FILTER (WHERE needs_vendor_enrichment = 1) AS pending_vendor_enrichment,
+          COUNT(*) FILTER (WHERE needs_vendor_enrichment = 1 OR EXISTS (
+            SELECT 1 FROM vendor_jobs j WHERE j.company_id = companies.id AND j.status IN ('pending', 'running')
+          )) AS pending_vendor_enrichment,
           COUNT(*) FILTER (WHERE needs_embed = 1) AS pending_embed
         FROM companies
       `,
@@ -428,6 +434,7 @@ export async function getLatestSyncStatus() {
 
   return {
     latestRun,
+    vendorQueue: await getVendorQueueStatus(),
     backlog: {
       pendingScrape: Number(backlog?.pending_scrape ?? 0),
       pendingWebsiteScrape: Number(backlog?.pending_website_scrape ?? 0),

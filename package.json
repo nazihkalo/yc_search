@@ -16,6 +16,9 @@
     "sync:scrape": "tsx scripts/scrape-companies.ts",
     "sync:scrape:yc-profile": "tsx scripts/scrape-yc-company-pages.ts",
     "sync:vendors": "tsx scripts/enrich-company-vendors.ts",
+    "vendor:worker": "tsx scripts/vendor-worker.ts",
+    "vendor:pilot": "tsx scripts/vendor-pilot.ts",
+    "test:vendors": "tsx --test tests/vendor-*.test.ts",
     "test:crawl4ai:sample": "tsx scripts/test-crawl4ai-sample.ts",
     "sync:embed": "tsx scripts/embed-companies.ts",
     "sync:founders": "tsx scripts/extract-founders.ts",
@@ -23,7 +26,11 @@
     "sync:founders:sites": "tsx scripts/crawl-founder-sites.ts",
     "sync:founders:exa": "tsx scripts/enrich-founders-exa.ts",
     "sync:incremental": "tsx scripts/sync-incremental.ts",
-    "sync:all": "npm run db:migrate && npm run sync:incremental"
+    "sync:all": "npm run db:migrate && npm run sync:incremental",
+    "discover:companies": "tsx scripts/discover-companies.ts",
+    "test:discovery": "tsx --test tests/company-discovery.test.ts",
+    "scrape:compare": "tsx scripts/compare-scraping.ts",
+    "test:scraping": "tsx --test tests/scrape-*.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.3",
@@ -36,6 +43,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-table": "^8.21.3",
+    "cheerio": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -55,6 +63,7 @@
     "svix": "^1.90.0",
     "tailwind-merge": "^3.5.0",
     "three": "^0.184.0",
+    "tldts": "^7.5.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -17,6 +17,7 @@ A full Next.js app for:
 - storing metadata + scrape snapshots + embeddings in Postgres
 - searching with both faceted keyword search and semantic search
 - visual analytics by batch over time with optional stacked color-by tags/industries
+- vendor discovery from public disclosures, with durable crawl jobs and evidence history
 
 ## Stack
 
@@ -192,6 +193,8 @@ npm run db:import:sqlite
 
 ## Railway deployment
 
+For the dedicated vendor worker, fixed-cohort pilot, and retry/refresh settings, see [Operate the vendor pipeline](docs/vendor-pipeline.md).
+
 This repo is configured for Railway via `Dockerfile` + `railway.json`.
 
 Recommended Railway setup:
@@ -219,3 +222,7 @@ Observability:
 
 - use Railway Observability for logs/CPU/RAM on `web` and `sync-worker`
 - use `GET /api/sync/status` for the latest run plus pending scrape/embed backlog
+
+Company list discovery runs independently with `npm run discover:companies`. See [the discovery runbook](docs/company-discovery.md) for LinkedIn/CNBC/Fortune/Forbes sources, historical searches, evidence and identity rules, and the daily Railway cron configuration.
+
+For shared browser sessions, rate-limit handling, and the optional residential proxy comparison, see [scraping operations](docs/scraping.md).

@@ -98,7 +98,7 @@ export function getOpenAiApiKey() {
   return value;
 }
 
-export function shouldValidateNetNewVendors() {
+export function shouldValidateVendorRelationships() {
   return process.env.VENDOR_LLM_VALIDATION !== "0";
 }
 
