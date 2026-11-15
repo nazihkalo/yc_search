@@ -69,7 +69,7 @@ before(async () => {
   delete process.env.EXA_API_KEY;
   await initializeDatabase();
 });
-beforeEach(async () => { delete process.env.EXA_API_KEY; await getDb().query("TRUNCATE companies,company_list_sources,company_discovery_runs,company_discovery_state CASCADE"); });
+beforeEach(async () => { delete process.env.EXA_API_KEY; await getDb().query("TRUNCATE companies,company_list_sources,company_discovery_runs,company_discovery_state,company_profile_websites CASCADE"); });
 after(async () => { await closeDb(); if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); } });
 
 test("domain dedup preserves YC metadata and multiple editions", async () => {
@@ -198,6 +198,23 @@ test("numbered LinkedIn adapter extracts exact members and rejects incomplete li
   assert.throws(() => extractLinkedInRanking(markdown.replace("The 2", "The 3")), /Incomplete/);
   assert.throws(() => extractLinkedInRanking(markdown.replace("2. Beta", "3. Beta")), /Noncontiguous/);
   assert.equal(extractLinkedInRanking("# Some article\n### 1. Sponsor"), null);
+});
+
+test("long LinkedIn article bodies missing ranking headings recover through the browser", async () => {
+  await enqueueSource(source, "list");
+  const articleBody = "Selected startups build technology products. ".repeat(30);
+  const rendered = "# LinkedIn Top Startups 2026: The 2 U.S. companies on the rise\n"
+    + "### 1. Acme\n[ ](https://www.linkedin.com/company/acme)\nAcme builds tools.\n"
+    + "### 2. Beta\n[ ](https://www.linkedin.com/company/beta)\nBeta builds databases.\n";
+  let renders = 0;
+  const summary = await runCompanyDiscovery({ ...options, browser: true }, {
+    fetchPage: async () => ({ content: articleBody, lists: [] }),
+    renderPage: async () => { renders++; return rendered; },
+    extract: async () => { throw new Error("The complete numbered ranking must not need a model"); },
+  });
+  assert.equal(renders, 1);
+  assert.equal("failed" in summary && summary.failed, 0);
+  assert.equal((await getDb().query("SELECT * FROM company_list_memberships")).rowCount, 2);
 });
 
 test("stable publisher profile indexes a company without guessing a website", async () => {

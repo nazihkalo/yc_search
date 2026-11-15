@@ -98,7 +98,14 @@ export async function runCompanyDiscovery(options: DiscoveryOptions, dependencie
             pageData = { content: "", lists: [] as string[] };
           }
           let { content, lists } = pageData;
-          if (options.browser && content.length < 500) {
+          let needsRankingStructure = false;
+          if (options.browser && page.kind === "list" && publisherOf(page.url) === "linkedin") {
+            // LinkedIn can return a long article body without the title/rank
+            // headings. Text length alone does not establish a usable ranking.
+            try { needsRankingStructure = !extractLinkedInRanking(content); }
+            catch { needsRankingStructure = true; }
+          }
+          if (options.browser && (content.length < 500 || needsRankingStructure)) {
             content = await renderPage(page.url, { signal: AbortSignal.timeout(90_000), allowProxy: true });
             // Browser content can also expose links hidden behind hydration.
             lists = [...lists, ...[...content.matchAll(/https:\/\/[^\s)<>"\]]+/g)].map((m) => m[0]).filter((url) => looksLikeList(url))];
