@@ -64,6 +64,7 @@ export type DashboardBridgeState = {
   view: ResultsView;
   activeTab: DashboardTab;
   vendorCategory: string;
+  vendorRanking: "top" | "recent";
   graphOpen: boolean;
   totalResults: number;
   visibleCompanies: VisibleCompany[];
@@ -86,6 +87,7 @@ export type DashboardBridgeSetters = {
   setView: (v: ResultsView) => void;
   setActiveTab: (v: DashboardTab) => void;
   setVendorCategory: (v: string) => void;
+  setVendorRanking: (v: "top" | "recent") => void;
   setGraphOpen: (v: boolean) => void;
   setSelectedCompanyId: (v: number | null) => void;
   setHighlightCompanyId: (v: number | null) => void;
@@ -611,8 +613,15 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
         "Use this for questions like 'What are the most popular vendors?', 'Which auth vendors show up?', " +
         "'What tools are used by healthcare companies?', or any question about subprocessors, vendors, " +
         "technology providers, or stack patterns. This returns top vendors, categories, relationship counts, " +
-        "and source coverage.",
+        "and source coverage. Use ranking='recent' for recently discovered or trending requests. " +
+        "Recent counts include backfill and are not adoption trends, market share, or service quality ratings.",
       parameters: [
+        {
+          name: "ranking",
+          type: "string",
+          description: "'top' ranks by distinct companies with evidence; 'recent' ranks by company–vendor pairs first recorded in the last 30 days, including backfill. Default 'top'.",
+          required: false,
+        },
         {
           name: "query",
           type: "string",
@@ -661,9 +670,10 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
       ],
       handler: async (args) => {
         try {
-          const { query, category, topN, tags, industries, sources, useCurrentFilters } = args as {
+          const { query, category, ranking, topN, tags, industries, sources, useCurrentFilters } = args as {
             query?: string;
             category?: string;
+            ranking?: string;
             topN?: number;
             tags?: string[];
             industries?: string[];
@@ -692,13 +702,17 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
             if (s.nonprofit) params.set("nonprofit", "1");
             if (s.topCompany) params.set("topCompany", "1");
           }
-          if (category) params.set("vendorCategory", category);
+          const nextCategory = category ?? (useCurrent ? s.vendorCategory : "");
+          const nextRanking = ranking === "recent" ? "recent" : "top";
+          if (nextCategory) params.set("vendorCategory", nextCategory);
+          params.set("vendorRanking", nextRanking);
           params.set("topN", String(Math.max(1, Math.min(50, topN ?? 12))));
           params.set("page", "1");
           params.set("pageSize", "25");
 
           set.setActiveTab("vendors");
-          if (category !== undefined) set.setVendorCategory(category);
+          set.setVendorCategory(nextCategory);
+          set.setVendorRanking(nextRanking);
           if (query !== undefined) set.setQuery(query);
           if (tags !== undefined) set.setTags(tags);
           if (industries !== undefined) set.setIndustries(industries);
@@ -711,7 +725,8 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
           const payload = await res.json();
           return JSON.stringify({
             query: nextQuery,
-            category: category ?? "",
+            category: nextCategory,
+            ranking: nextRanking,
             analytics: payload,
           });
         } catch (error) {
@@ -751,6 +766,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
         const parsed = parseToolResult<{
           query?: string;
           category?: string;
+          ranking?: "top" | "recent";
           analytics?: VendorAnalyticsChatData;
           error?: string;
         }>(result);
@@ -769,6 +785,7 @@ export function DashboardCopilotBridge({ state, setters }: Props) {
             {trace}
             <VendorAnalyticsList
               analytics={parsed.analytics}
+              ranking={parsed.ranking}
               category={parsed.category}
               query={parsed.query}
             />

@@ -1,12 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
 import {
-  ArrowUpRight,
   BarChart3,
-  Building2,
-  Filter,
   LayoutGrid,
   Network,
   Rows3,
@@ -23,7 +19,7 @@ import { useWorkspace } from "./dashboard/workspace-context";
 import { ResultsCardGrid } from "./dashboard/results-card-grid";
 import { ResultsNikoPreviewTable } from "./dashboard/results-niko-preview-table";
 import { CompaniesForceGraphTab } from "./graph/companies-force-graph-lazy";
-import { VendorLogo } from "./vendor-logo";
+import { VendorAnalyticsPanel } from "./dashboard/vendor-rankings";
 import type { GraphNode } from "../lib/graph";
 import type {
   AnalyticsResponse,
@@ -41,22 +37,7 @@ type AnalyticsColorBy = "none" | "tags" | "industries";
 type ResultsView = "cards" | "table";
 type SortOption = "relevance" | "newest" | "team_size" | "name";
 type DashboardTab = "results" | "analytics" | "vendors";
-type VendorAnalyticsResponse = {
-  totalCompanies: number;
-  totalRelationships: number;
-  topVendors: Array<{
-    id: number;
-    name: string;
-    category: string;
-    domain: string | null;
-    companyCount: number;
-    relationshipCount: number;
-    sourceCounts: Record<string, number>;
-  }>;
-  categories: Array<{ category: string; companyCount: number; relationshipCount: number }>;
-  sourceKinds: Array<{ sourceKind: string; companyCount: number; relationshipCount: number }>;
-  relationshipTypes: Array<{ relationshipType: string; companyCount: number; relationshipCount: number }>;
-};
+type VendorAnalyticsResponse = import("../lib/vendor-analytics").VendorAnalyticsPayload;
 
 const CARD_PAGE_SIZE = 24;
 const DEFAULT_TABLE_PAGE_SIZE = 50;
@@ -214,6 +195,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
   const [analyticsColorBy, setAnalyticsColorBy] = useState<AnalyticsColorBy>(
     (searchParams.get("colorBy") as AnalyticsColorBy) ?? "none",
   );
+  const [vendorRanking, setVendorRanking] = useState<"top" | "recent">(searchParams.get("vendorRanking") === "recent" ? "recent" : "top");
   const [vendorCategory, setVendorCategory] = useState(searchParams.get("vendorCategory") ?? "");
   const [graphOpen, setGraphOpen] = useState(searchParams.get("graph") === "1");
   const [graphRatio, setGraphRatio] = useState(() => {
@@ -372,6 +354,9 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     if (topCompany) {
       params.set("topCompany", "1");
     }
+    if (activeTab === "vendors" && vendorRanking === "recent") {
+      params.set("vendorRanking", "recent");
+    }
     if (activeTab === "vendors" && vendorCategory) {
       params.set("vendorCategory", vendorCategory);
     }
@@ -399,6 +384,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     tags,
     topCompany,
     vendorCategory,
+    vendorRanking,
     visibleTableColumns,
     view,
     years,
@@ -510,9 +496,10 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
       params.set("vendorQuery", query.trim());
       params.delete("q");
     }
+    const controller = new AbortController();
     setVendorAnalyticsLoading(true);
 
-    fetch(`/api/vendors?${params.toString()}`)
+    fetch(`/api/vendors?${params.toString()}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((payload) => {
         if (payload.error) {
@@ -522,10 +509,12 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
         setVendorAnalytics(payload);
       })
       .catch((fetchError) => {
+        if (controller.signal.aborted) return;
         const message = fetchError instanceof Error ? fetchError.message : "Vendor analytics request failed";
         setVendorAnalyticsError(message);
       })
-      .finally(() => setVendorAnalyticsLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setVendorAnalyticsLoading(false); });
+    return () => controller.abort();
   }, [activeTab, baseQueryString, query]);
 
   function toggleArrayValue<T extends string | number>(
@@ -792,6 +781,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
             view,
             activeTab,
             vendorCategory,
+            vendorRanking,
             graphOpen,
             totalResults: results.total,
             visibleCompanies: results.results.slice(0, 30).map((row) => ({
@@ -880,6 +870,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
               revealResults?.();
               setActiveTab(v);
             },
+            setVendorRanking,
             setVendorCategory: (v) => {
               revealResults?.();
               setPage(1);
@@ -1003,6 +994,8 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
             isLoading={vendorAnalyticsLoading}
             error={vendorAnalyticsError}
             selectedCategory={vendorCategory}
+            ranking={vendorRanking}
+            onRankingChange={setVendorRanking}
             returnToPath={`/dashboard?${baseQueryString}`}
             onCategoryChange={(nextCategory) => {
               setPage(1);
@@ -1391,207 +1384,6 @@ function SourceTagFilters({
   );
 }
 
-function VendorAnalyticsPanel({
-  analytics,
-  isLoading,
-  error,
-  selectedCategory,
-  returnToPath,
-  onCategoryChange,
-}: {
-  analytics: VendorAnalyticsResponse | null;
-  isLoading: boolean;
-  error: string | null;
-  selectedCategory: string;
-  returnToPath: string;
-  onCategoryChange: (category: string) => void;
-}) {
-  if (error) {
-    return <ErrorBanner message={error} />;
-  }
-
-  if (isLoading) {
-    return <LoadingState label="Refreshing vendor analytics..." />;
-  }
-
-  if (!analytics || analytics.totalRelationships === 0) {
-    return (
-      <section className="space-y-3">
-        <div className="rounded-lg border border-border/60 bg-card/85 px-4 py-3">
-            <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
-              <Filter className="size-4 text-primary" />
-              Vendor directory
-            </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Category filtering will appear here once enrichment has detected vendors.
-          </p>
-        </div>
-        <Card className="rounded-lg border-border/60 bg-card/85">
-          <CardContent className="px-6 py-10 text-center">
-              <p className="text-base font-medium">No vendor intelligence yet</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Run vendor enrichment to populate subprocessors and detected technologies.
-            </p>
-          </CardContent>
-        </Card>
-      </section>
-    );
-  }
-
-  const selectedCategoryLabel = selectedCategory || "All categories";
-  const visibleVendorCount = analytics.topVendors.length;
-  const relationshipTypes = analytics.relationshipTypes.slice(0, 8);
-  const sourceKinds = analytics.sourceKinds.slice(0, 6);
-
-  return (
-    <section className="space-y-3">
-      <div className="sticky top-16 z-30 rounded-lg border border-border/70 bg-card px-4 py-3 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-base font-semibold tracking-tight">Vendor directory</p>
-              <span className="rounded-md border border-border/60 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground">
-                {selectedCategoryLabel}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {analytics.totalRelationships.toLocaleString()} evidence-backed relationships across{" "}
-              {analytics.totalCompanies.toLocaleString()} companies.
-            </p>
-          </div>
-
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="min-w-0 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              <span className="mb-1 block">Vendor category</span>
-              <select
-                value={selectedCategory}
-                onChange={(event) => onCategoryChange(event.target.value)}
-                className="h-10 w-full min-w-0 rounded-md border border-border/70 bg-background px-3 text-sm font-normal normal-case tracking-normal text-foreground shadow-sm outline-none transition hover:border-border focus:border-primary/55 focus:ring-2 focus:ring-primary/15 sm:w-[280px]"
-              >
-                <option value="">All categories</option>
-                {analytics.categories.map((category) => (
-                  <option key={category.category} value={category.category}>
-                    {category.category} ({category.companyCount.toLocaleString()})
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedCategory ? (
-              <button
-                type="button"
-                onClick={() => onCategoryChange("")}
-                className="h-10 rounded-md border border-border/70 px-3 text-sm font-medium text-muted-foreground transition hover:border-primary/35 hover:text-foreground"
-              >
-                Clear
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
-            <p className="text-base font-semibold">{visibleVendorCount.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">vendors shown</p>
-          </div>
-          <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
-            <p className="text-base font-semibold">{analytics.totalCompanies.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">companies</p>
-          </div>
-          <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
-            <p className="text-base font-semibold">{analytics.totalRelationships.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">relationships</p>
-          </div>
-        </div>
-      </div>
-
-      <Card className="rounded-lg border-border/60 bg-card/85">
-        <CardHeader className="border-b border-border/55 pb-4">
-          <CardTitle className="text-lg">Vendors</CardTitle>
-          <CardDescription>
-            Browse tools and platforms detected in the current company set.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {visibleVendorCount > 0 ? (
-            analytics.topVendors.map((vendor) => (
-              <Link
-                key={vendor.id}
-                href={`/vendors/${vendor.id}?returnTo=${encodeURIComponent(returnToPath)}`}
-                className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-background/50 px-3 py-3 transition hover:border-primary/40 hover:bg-background/80 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <VendorLogo name={vendor.name} domain={vendor.domain} size="md" />
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-base font-medium group-hover:text-primary">{vendor.name}</p>
-                      <span className="rounded-md border border-border/70 px-2.5 py-1 text-xs text-muted-foreground">
-                        {vendor.category}
-                      </span>
-                    </div>
-                    {vendor.domain ? (
-                      <p className="mt-0.5 truncate text-sm text-muted-foreground">{vendor.domain}</p>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm text-muted-foreground sm:justify-end">
-                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground">
-                    <Building2 className="size-3" />
-                    {vendor.companyCount.toLocaleString()}
-                  </span>
-                  {Object.entries(vendor.sourceCounts).map(([source, count]) => (
-                    <span key={`${vendor.id}-${source}`} className="rounded-md bg-muted px-2 py-0.5">
-                      {sourceLabel(source)} {count}
-                    </span>
-                  ))}
-                  <ArrowUpRight className="size-3.5 opacity-50 transition group-hover:opacity-100" />
-                </div>
-              </Link>
-            ))
-          ) : (
-            <div className="rounded-lg border border-border/60 bg-background/50 px-4 py-8 text-center">
-              <p className="text-base font-medium">No vendors match this category</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Clear the category filter to return to the full vendor directory.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Card className="rounded-lg border-border/60 bg-card/85">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Relationship types</CardTitle>
-            <CardDescription>How vendor evidence was classified.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {relationshipTypes.map((item) => (
-              <div key={item.relationshipType} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate text-muted-foreground">{item.relationshipType.replace(/_/g, " ")}</span>
-                <span className="font-medium">{item.companyCount.toLocaleString()}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-lg border-border/60 bg-card/85">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Evidence sources</CardTitle>
-            <CardDescription>Source coverage for the current vendor set.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {sourceKinds.map((item) => (
-              <div key={item.sourceKind} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate text-muted-foreground">{sourceLabel(item.sourceKind)}</span>
-                <span className="font-medium">{item.companyCount.toLocaleString()}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  );
-}
 
 function SegmentedControl({
   options,

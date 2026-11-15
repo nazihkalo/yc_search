@@ -10,10 +10,13 @@ type VendorAnalyticsRow = {
   relationship_type: string;
   relationship_category: string;
   source_kind: string;
+  first_seen_at: string | Date;
+  recently_discovered: boolean;
 };
 
 export type VendorAnalyticsOptions = {
   topN?: number;
+  ranking?: "top" | "recent";
   category?: string | null;
   vendorQuery?: string | null;
   relationshipTypes?: string[];
@@ -22,6 +25,9 @@ export type VendorAnalyticsOptions = {
 
 export type VendorAnalyticsPayload = {
   totalCompanies: number;
+  coverage: { matchedCompanies: number; companiesWithVendors: number };
+  recentWindowDays: number;
+  totalVendors: number;
   totalRelationships: number;
   topVendors: Array<{
     id: number;
@@ -30,6 +36,8 @@ export type VendorAnalyticsPayload = {
     domain: string | null;
     companyCount: number;
     relationshipCount: number;
+    recentCompanyCount: number;
+    firstSeenAt: string;
     sourceCounts: Record<string, number>;
   }>;
   categories: Array<{ category: string; companyCount: number; relationshipCount: number }>;
@@ -118,7 +126,10 @@ function buildCompanyFilterWhereClause(
     filters.sources.forEach((source, index) => {
       params[`source_${index}`] = source;
     });
-    fragments.push(`c.source_kind IN (${placeholders.join(", ")})`);
+    fragments.push(`(c.source_kind IN (${placeholders.join(", ")}) OR EXISTS (
+      SELECT 1 FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url = lm.source_url
+      WHERE lm.company_id = c.id AND (ls.publisher || '_lists') IN (${placeholders.join(", ")})
+    ))`);
   }
 
   if (filters.isHiring) fragments.push("c.is_hiring = 1");
@@ -205,10 +216,22 @@ export async function getVendorAnalytics(
   const whereClauses = ["1=1"];
   buildCompanyFilterWhereClause(params.query.trim(), params.filters, queryParams, whereClauses);
 
-  if (options.category) {
-    queryParams.vendor_category = options.category;
-    whereClauses.push("v.category = @vendor_category");
+  if (options.sourceListName) {
+    queryParams.source_list_name = options.sourceListName;
+    whereClauses.push(`(c.source_list_name = @source_list_name OR EXISTS (
+      SELECT 1 FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url = lm.source_url
+      WHERE lm.company_id = c.id AND ls.title = @source_list_name
+    ))`);
   }
+
+  // Coverage describes the selected company cohort, independent of vendor filters.
+  const [coverageRow] = await query<{ matched: string; with_vendors: string }>(`
+    SELECT COUNT(*) AS matched,
+      COUNT(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM company_vendors cv WHERE cv.company_id = c.id
+      )) AS with_vendors
+    FROM companies c WHERE ${whereClauses.join(" AND ")}
+  `, queryParams);
 
   const vendorQuery = options.vendorQuery?.trim();
   if (vendorQuery) {
@@ -221,11 +244,6 @@ export async function getVendorAnalytics(
         OR LOWER(v.aliases::text) LIKE @vendor_query
       )
     `);
-  }
-
-  if (options.sourceListName) {
-    queryParams.source_list_name = options.sourceListName;
-    whereClauses.push("c.source_list_name = @source_list_name");
   }
 
   if (options.relationshipTypes?.length) {
@@ -245,8 +263,16 @@ export async function getVendorAnalytics(
       cv.company_id,
       cv.relationship_type,
       cv.category AS relationship_category,
-      c.source_kind
+      c.source_kind,
+      first_seen.first_seen_at,
+      first_seen.first_seen_at >= NOW() - INTERVAL '30 days' AS recently_discovered
     FROM company_vendors cv
+    INNER JOIN (
+      -- Earliest evidence across all pages and relationship types. A recrawl or
+      -- a newly found second page must not make an existing pair look new.
+      SELECT company_id, vendor_id, MIN(created_at) AS first_seen_at
+      FROM company_vendors GROUP BY company_id, vendor_id
+    ) first_seen ON first_seen.company_id = cv.company_id AND first_seen.vendor_id = cv.vendor_id
     INNER JOIN vendors v ON v.id = cv.vendor_id
     INNER JOIN companies c ON c.id = cv.company_id
     WHERE ${whereClauses.join(" AND ")}
@@ -261,6 +287,8 @@ export async function getVendorAnalytics(
     domain: string | null;
     companyIds: Set<number>;
     relationshipCount: number;
+    recentCompanyIds: Set<number>;
+    firstSeenAt: string;
     sourceCompanyIds: Map<string, Set<number>>;
   }>();
   const categories = new Map<string, { companyIds: Set<number>; relationshipCount: number }>();
@@ -269,7 +297,13 @@ export async function getVendorAnalytics(
 
   for (const row of rows) {
     const vendorId = Number(row.vendor_id);
+    const category = categories.get(row.vendor_category) ?? { companyIds: new Set<number>(), relationshipCount: 0 };
+    category.companyIds.add(row.company_id);
+    category.relationshipCount += 1;
+    categories.set(row.vendor_category, category);
+    if (options.category && row.vendor_category !== options.category) continue;
     totalCompanyIds.add(row.company_id);
+    const firstSeenAt = new Date(row.first_seen_at).toISOString();
 
     const vendor = vendors.get(vendorId) ?? {
       id: vendorId,
@@ -278,19 +312,18 @@ export async function getVendorAnalytics(
       domain: row.domain,
       companyIds: new Set<number>(),
       relationshipCount: 0,
+      recentCompanyIds: new Set<number>(),
+      firstSeenAt,
       sourceCompanyIds: new Map<string, Set<number>>(),
     };
     vendor.companyIds.add(row.company_id);
+    if (row.recently_discovered) vendor.recentCompanyIds.add(row.company_id);
+    if (firstSeenAt < vendor.firstSeenAt) vendor.firstSeenAt = firstSeenAt;
     vendor.relationshipCount += 1;
     const sourceSet = vendor.sourceCompanyIds.get(row.source_kind) ?? new Set<number>();
     sourceSet.add(row.company_id);
     vendor.sourceCompanyIds.set(row.source_kind, sourceSet);
     vendors.set(vendorId, vendor);
-
-    const category = categories.get(row.vendor_category) ?? { companyIds: new Set<number>(), relationshipCount: 0 };
-    category.companyIds.add(row.company_id);
-    category.relationshipCount += 1;
-    categories.set(row.vendor_category, category);
 
     const source = sources.get(row.source_kind) ?? { companyIds: new Set<number>(), relationshipCount: 0 };
     source.companyIds.add(row.company_id);
@@ -303,13 +336,19 @@ export async function getVendorAnalytics(
     relationshipTypes.set(row.relationship_type, relationship);
   }
 
+  const rankedVendors = [...vendors.values()].filter((vendor) => options.ranking !== "recent" || vendor.recentCompanyIds.size > 0);
   return {
+    coverage: { matchedCompanies: Number(coverageRow.matched), companiesWithVendors: Number(coverageRow.with_vendors) },
+    recentWindowDays: 30,
+    totalVendors: rankedVendors.length,
     totalCompanies: totalCompanyIds.size,
-    totalRelationships: rows.length,
-    topVendors: [...vendors.values()]
+    totalRelationships: [...vendors.values()].reduce((sum, vendor) => sum + vendor.relationshipCount, 0),
+    topVendors: rankedVendors
       .sort((left, right) => {
+        if (options.ranking === "recent" && left.recentCompanyIds.size !== right.recentCompanyIds.size) {
+          return right.recentCompanyIds.size - left.recentCompanyIds.size;
+        }
         if (left.companyIds.size !== right.companyIds.size) return right.companyIds.size - left.companyIds.size;
-        if (left.relationshipCount !== right.relationshipCount) return right.relationshipCount - left.relationshipCount;
         return left.name.localeCompare(right.name);
       })
       .slice(0, topN)
@@ -320,6 +359,8 @@ export async function getVendorAnalytics(
         domain: vendor.domain,
         companyCount: vendor.companyIds.size,
         relationshipCount: vendor.relationshipCount,
+        recentCompanyCount: vendor.recentCompanyIds.size,
+        firstSeenAt: vendor.firstSeenAt,
         sourceCounts: setToCountRecord(vendor.sourceCompanyIds),
       })),
     categories: [...categories.entries()]

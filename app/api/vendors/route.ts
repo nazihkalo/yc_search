@@ -20,6 +20,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const params = parseSearchParams(searchParams);
     const topN = topNSchema.parse(searchParams.get("topN") ?? "50");
+    const ranking = searchParams.get("vendorRanking") === "recent" ? "recent" : "top";
     const category = searchParams.get("vendorCategory");
     const vendorQuery = searchParams.get("vendorQuery");
     const sourceListName = searchParams.get("sourceList");
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
     if (!hasDatabaseUrl()) {
       return NextResponse.json({
         totalCompanies: 0,
+        coverage: { matchedCompanies: 0, companiesWithVendors: 0 },
+        recentWindowDays: 30,
+        totalVendors: 0,
         totalRelationships: 0,
         topVendors: [],
         categories: [],
@@ -39,6 +43,7 @@ export async function GET(request: Request) {
 
     const analytics = await getVendorAnalytics(params, {
       topN,
+      ranking,
       category,
       vendorQuery,
       sourceListName,

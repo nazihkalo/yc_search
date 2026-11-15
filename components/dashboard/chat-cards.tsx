@@ -72,6 +72,7 @@ export type VendorChatData = {
   category: string;
   domain: string | null;
   companyCount: number;
+  recentCompanyCount?: number;
   relationshipCount: number;
   sourceCounts: Record<string, number>;
 };
@@ -284,10 +285,12 @@ export function VendorAnalyticsList({
   analytics,
   category,
   query,
+  ranking,
 }: {
   analytics: VendorAnalyticsChatData;
   category?: string | null;
   query?: string | null;
+  ranking?: "top" | "recent";
 }) {
   const vendors = analytics.topVendors ?? [];
 
@@ -305,21 +308,22 @@ export function VendorAnalyticsList({
       <div className="flex items-center gap-2 px-1 text-[11px] uppercase tracking-wider text-muted-foreground/80">
         <Package className="size-3" />
         <span>
-          {vendors.length} top vendors across {analytics.totalCompanies.toLocaleString()} compan
-          {analytics.totalCompanies === 1 ? "y" : "ies"}
+          {vendors.length} {ranking === "recent" ? "recently discovered vendors" : "top vendors"}
+          {ranking !== "recent" ? <> across {analytics.totalCompanies.toLocaleString()} {analytics.totalCompanies === 1 ? "company" : "companies"}</> : null}
           {category ? <> in {category}</> : null}
         </span>
       </div>
+      {ranking === "recent" ? <p className="px-1 text-xs text-muted-foreground">Company–vendor pairs first recorded in the last 30 days, including backfill. These are discoveries, not adoption trends.</p> : null}
       <div className="flex flex-col gap-1.5">
         {vendors.map((vendor, index) => (
-          <VendorChatCard key={vendor.id} vendor={vendor} rank={index + 1} />
+          <VendorChatCard key={vendor.id} vendor={vendor} rank={index + 1} recent={ranking === "recent"} />
         ))}
       </div>
     </div>
   );
 }
 
-function VendorChatCard({ vendor, rank }: { vendor: VendorChatData; rank: number }) {
+function VendorChatCard({ vendor, rank, recent }: { vendor: VendorChatData; rank: number; recent?: boolean }) {
   const sources = Object.entries(vendor.sourceCounts ?? {});
   return (
     <a
@@ -342,6 +346,7 @@ function VendorChatCard({ vendor, rank }: { vendor: VendorChatData; rank: number
           </Badge>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+          {recent && vendor.recentCompanyCount !== undefined ? <span>+{vendor.recentCompanyCount.toLocaleString()} first recorded in 30 days</span> : null}
           <span>{vendor.companyCount.toLocaleString()} companies</span>
           <span>{vendor.relationshipCount.toLocaleString()} relationships</span>
           {vendor.domain ? <span>{vendor.domain}</span> : null}
