@@ -27,10 +27,10 @@ Before expanding, review a sample of accepted relationships against their source
 2. Create a Railway service from the same repository and Dockerfile. Set the service's start command to the value recorded in `railway.vendor-worker.json`:
 
    ```bash
-   npm run db:migrate && npm run vendor:worker -- --continuous --limit=25
+   npm run vendor:worker -- --continuous --limit=25
    ```
 
-   Use one replica and restart on failure. New Railway services may reject legacy config-file paths; in that case configure these values directly in service settings.
+   The worker initializes its schema before claiming jobs. Use one replica and restart on failure. Keep the start command to one process: chaining commands with `&&` in Railway service settings can run only the first command. New Railway services may reject legacy config-file paths; in that case configure these values directly in service settings.
 
 3. Give it the same `DATABASE_URL`, `OPENAI_API_KEY`, `CRAWL4AI_PYTHON_BIN`, and optional `EXA_API_KEY` and `OPENAI_BASE_URL` as the app. Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` for the shared Dockerfile's Next.js build. The Dockerfile already installs Chromium and Crawl4AI.
 4. Set `VENDOR_DEDICATED_WORKER=1` on the incremental sync service so vendor crawls no longer wait behind founder enrichment. Keep the flag unset until the dedicated worker is running. Deploy all existing sync services to this version before adding replicas; older versions do not participate in job leasing.
