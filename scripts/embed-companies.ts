@@ -14,6 +14,7 @@ type EmbedCandidate = {
   one_liner: string | null;
   long_description: string | null;
   search_text: string;
+  list_context: string | null;
   tags: string;
   industries: string;
   regions: string;
@@ -150,6 +151,7 @@ function buildEmbeddingText(candidate: EmbedCandidate, founderContext: string, v
     `Industries: ${industries}`,
     `Regions: ${regions}`,
     `Source: ${candidate.source_list_name ?? candidate.source_kind} ${candidate.source_year ?? ""}`,
+    `Selected company lists: ${(candidate.list_context ?? "").slice(0, 4000)}`,
     `Batch: ${candidate.batch ?? ""}`,
     `Stage: ${candidate.stage ?? ""}`,
     `Status: ${candidate.status ?? ""}`,
@@ -184,6 +186,9 @@ export async function embedCompanies(options?: { limit?: number }): Promise<Embe
         c.one_liner,
         c.long_description,
         c.search_text,
+        (SELECT STRING_AGG(CONCAT_WS(' ',ls.title,ls.list_year::text,ls.region,'rank',lm.rank::text),' | ' ORDER BY ls.url)
+         FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url=lm.source_url
+         WHERE lm.company_id=c.id) AS list_context,
         c.tags,
         c.industries,
         c.regions,

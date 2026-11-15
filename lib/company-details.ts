@@ -478,9 +478,14 @@ export async function getCompanyDetail(companyId: number) {
     ? parseYcCompanyProfileSnapshotMarkdown(row.content_markdown_yc_profile)
     : { socials: [], founders: [], newsItems: [], launches: [] };
 
-  const [enrichedFounders, vendors] = await Promise.all([
+  const [enrichedFounders, vendors, companyLists] = await Promise.all([
     getEnrichedFounders(companyId),
     getCompanyVendors(companyId),
+    query<{ source_url: string; title: string; list_year: number | null; region: string | null; rank: number | null; evidence: string }>(`
+      SELECT ls.url AS source_url,ls.title,ls.list_year,ls.region,lm.rank,lm.evidence
+      FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url=lm.source_url
+      WHERE lm.company_id=@id ORDER BY ls.list_year DESC NULLS LAST,ls.title
+    `, { id: companyId }),
   ]);
 
   return {
@@ -504,6 +509,7 @@ export async function getCompanyDetail(companyId: number) {
     yc_profile_news_items: ycProfile.newsItems,
     yc_profile_launches: ycProfile.launches,
     enriched_founders: enrichedFounders,
+    company_lists: companyLists,
     vendors,
   };
 }

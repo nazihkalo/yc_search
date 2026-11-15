@@ -1,3 +1,6 @@
+import { SCRAPE_BUDGET_SCHEMA } from "../lib/scrape-schema";
+import { COMPANY_DISCOVERY_SCHEMA } from "../lib/company-discovery/schema";
+
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS companies (
   id INTEGER PRIMARY KEY,
@@ -47,6 +50,9 @@ CREATE TABLE IF NOT EXISTS companies (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+${COMPANY_DISCOVERY_SCHEMA}
+${SCRAPE_BUDGET_SCHEMA}
 
 CREATE TABLE IF NOT EXISTS website_snapshots (
   company_id INTEGER NOT NULL,
@@ -253,6 +259,71 @@ CREATE TABLE IF NOT EXISTS vendor_candidate_rejections (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (company_id, normalized_name, evidence_url, source_type),
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vendor_jobs (
+  company_id INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'succeeded', 'dead')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  lease_token UUID,
+  lease_expires_at TIMESTAMPTZ,
+  refresh_at TIMESTAMPTZ,
+  last_outcome TEXT,
+  last_error TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_vendor_jobs_due ON vendor_jobs(status, available_at);
+
+CREATE TABLE IF NOT EXISTS vendor_runs (
+  id UUID PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  attempt INTEGER NOT NULL,
+  outcome TEXT NOT NULL DEFAULT 'running',
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  duration_ms INTEGER,
+  relationships INTEGER NOT NULL DEFAULT 0,
+  metrics JSONB NOT NULL DEFAULT '{}',
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_vendor_runs_company ON vendor_runs(company_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS vendor_document_versions (
+  id BIGSERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  content_markdown TEXT NOT NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (company_id, url, source_type, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS vendor_relationship_observations (
+  run_id UUID NOT NULL REFERENCES vendor_runs(id) ON DELETE CASCADE,
+  vendor_id BIGINT NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+  relationship_type TEXT NOT NULL,
+  evidence_url TEXT NOT NULL,
+  evidence_snippet TEXT NOT NULL,
+  confidence NUMERIC(4, 3) NOT NULL,
+  observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (run_id, vendor_id, relationship_type, evidence_url)
+);
+
+CREATE TABLE IF NOT EXISTS vendor_validation_cache (
+  cache_key TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  response JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vendor_pilot_companies (
+  pilot_id TEXT NOT NULL,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  baseline_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (pilot_id, company_id)
 );
 
 CREATE TABLE IF NOT EXISTS founders (

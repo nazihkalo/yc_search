@@ -74,6 +74,7 @@ type CompanyDetailPayload = {
   founded_year: number | null;
   funding: string | null;
   enriched_founders: EnrichedFounder[];
+  company_lists?: Array<{ source_url: string; title: string; list_year: number | null; region: string | null; rank: number | null }>;
   vendors: Array<{
     id: number;
     name: string;
@@ -243,6 +244,16 @@ function DetailContent({ company }: { company: CompanyDetailPayload }) {
           {company.funding ? <span>{company.funding} funding</span> : null}
         </div>
 
+        {company.company_lists?.length ? (
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Featured on</span>
+            {company.company_lists.map((list) => (
+              <a key={list.source_url} href={list.source_url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                {list.title}{list.region ? ` · ${list.region}` : ""}{list.rank ? ` · #${list.rank}` : ""}
+              </a>
+            ))}
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {company.website ? (
             <DetailLink href={company.website} icon={Globe} label="Website" />

@@ -1,3 +1,6 @@
+import { isHostedTrustCenter } from "./vendor-discovery";
+import { getDomain } from "tldts";
+
 export const VENDOR_CATEGORIES = [
   "cloud",
   "AI/model provider",
@@ -57,13 +60,13 @@ export const COMMON_VENDOR_ENTITIES: VendorEntitySeed[] = [
   },
   {
     canonicalName: "Google Cloud",
-    aliases: ["GCP", "Google", "Google LLC", "Google Cloud Platform", "Google Cloud", "Google BigQuery", "BigQuery", "Firebase"],
+    aliases: ["GCP", "Google Cloud Platform", "Google Cloud", "Google BigQuery", "BigQuery", "Firebase"],
     domain: "cloud.google.com",
     category: "cloud",
   },
   {
     canonicalName: "Microsoft Azure",
-    aliases: ["Azure", "Microsoft", "Microsoft Azure", "Microsoft Cloud", "Microsoft Corporation"],
+    aliases: ["Azure", "Microsoft Azure", "Microsoft Cloud"],
     domain: "azure.microsoft.com",
     category: "cloud",
   },
@@ -374,8 +377,7 @@ function escapeRegExp(value: string) {
 }
 
 function rootDomainFromHost(hostname: string) {
-  const parts = hostname.toLowerCase().replace(/^www\./, "").split(".").filter(Boolean);
-  return parts.length >= 2 ? parts.slice(-2).join(".") : parts.join(".");
+  return getDomain(hostname, { allowPrivateDomains: true }) ?? hostname.toLowerCase();
 }
 
 export function normalizeDomain(value: string | null | undefined) {
@@ -452,7 +454,7 @@ export function categorizeVendor(rawName: string, rawDomain?: string | null): Ve
 function relationshipTypeFor(markdown: string, evidenceUrl: string): VendorRelationshipType {
   const lowerEvidenceUrl = evidenceUrl.toLowerCase();
   const text = markdown.slice(0, 30_000).toLowerCase();
-  const hasListSignals = /(^|\n)\s*(all\s+)?subprocessors\b/.test(text) ||
+  const hasListSignals = /(^|\n)\s*(?:#{1,6}\s*)?(all\s+)?sub-?processors\b/.test(text) ||
     /\bsubprocessors\b[\s\S]{0,600}\b(products?:|purpose|service|location)\b/.test(text) ||
     /\b(products?:|purpose|service|location)\b[\s\S]{0,600}\bsubprocessors\b/.test(text);
   if (hasListSignals && !/(privacy|dpa)/.test(lowerEvidenceUrl)) {
@@ -464,8 +466,8 @@ function relationshipTypeFor(markdown: string, evidenceUrl: string): VendorRelat
 }
 
 function snippetAround(markdown: string, needle: string) {
-  const lower = markdown.toLowerCase();
-  const index = lower.indexOf(needle.toLowerCase());
+  const match = new RegExp(`(^|[^a-zA-Z0-9])${escapeRegExp(needle)}(?=[^a-zA-Z0-9]|$)`, "i").exec(markdown);
+  const index = match ? match.index + match[1].length : -1;
   if (index < 0) {
     return markdown.replace(/\s+/g, " ").trim().slice(0, 500);
   }
@@ -518,6 +520,7 @@ const PRIVACY_PURPOSE_PATTERN = new RegExp([
 ].join("|"), "i");
 
 export function getVendorCandidateRejectionReason(value: string) {
+  if (/(?:^|\s)(?:trust|security)\s+(?:center|portal)$/i.test(value.trim())) return "trust_center_navigation";
   const cleaned = value
     .replace(/\[([^\]]*)\]\([^)]+\)/g, "$1")
     .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
@@ -580,6 +583,7 @@ function candidateNameFromStandaloneLine(lines: string[], index: number) {
   const current = lines[index]?.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim() ?? "";
   const next = lines[index + 1]?.trim() ?? "";
   const afterNext = lines[index + 2]?.trim() ?? "";
+  const fourth = lines[index + 3]?.trim() ?? "";
 
   if (!current || current.length > 90 || current.split(/\s+/).length > 7) return null;
   if (isRejectedVendorCandidate(current)) return null;
@@ -600,7 +604,11 @@ function candidateNameFromStandaloneLine(lines: string[], index: number) {
     /^products?:/i.test(afterNext) ||
     /^(cloud|billing|security|traffic|user support|analytics|email|fraud|web search|text to speech|fedramp)/i.test(next);
 
-  return looksLikeVantaListItem ? current : null;
+  const looksLikeHostedDirectoryItem =
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/.*)?$/i.test(fourth) &&
+    (getVendorCandidateRejectionReason(afterNext) === "location_label" || /^(US|USA|UK|EU)$/i.test(afterNext));
+
+  return looksLikeVantaListItem || looksLikeHostedDirectoryItem ? current : null;
 }
 
 function addMention(
@@ -630,8 +638,24 @@ function addMention(
     confidence,
     evidenceUrl,
     sourceType,
-    evidenceSnippet: snippetAround(markdown, rawName),
+    evidenceSnippet: snippetAround(markdown,
+      new RegExp(`(^|[^a-zA-Z0-9])${escapeRegExp(rawName)}([^a-zA-Z0-9]|$)`, "i").test(markdown)
+        ? rawName : entity.domain ?? rawName),
   });
+}
+
+export function getVendorEvidenceRejectionReason(mention: VendorMention) {
+  const withoutImages = mention.evidenceSnippet.replace(/!\[[^\]]*\]\([^)]+\)/g, " ");
+  const visible = withoutImages.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/https?:\/\/\S+/gi, " ");
+  const names = [mention.rawName, mention.canonicalName, ...mention.aliases, ...(mention.domain ? [mention.domain] : [])];
+  const containsName = (text: string) => names.some((name) => name &&
+    new RegExp(`(^|[^a-zA-Z0-9])${escapeRegExp(name)}([^a-zA-Z0-9]|$)`, "i").test(text));
+  if (!containsName(visible)) return "vendor_not_named_in_visible_evidence";
+  const outsideLinks = withoutImages.replace(/\[[^\]]+\]\([^)]+\)/g, " ").replace(/https?:\/\/\S+/gi, " ");
+  const listedService = mention.relationshipType === "subprocessor" && /[|•·]/.test(visible);
+  const explicitUse = /\b(uses?|using|utiliz\w*|hosted|powered|provided|processing|subprocessors?)\b/i.test(outsideLinks);
+  if (!containsName(outsideLinks) && !listedService && !explicitUse) return "navigation_only_vendor_link";
+  return null;
 }
 
 export function extractVendorMentionsFromMarkdown(markdown: string, evidenceUrl: string, sourceType: string) {
@@ -640,7 +664,7 @@ export function extractVendorMentionsFromMarkdown(markdown: string, evidenceUrl:
   const lowerEvidenceUrl = evidenceUrl.toLowerCase();
   const likelyVendorPage = /(subprocessor|sub-processor|vendor|privacy|dpa|security|trust)/i.test(text) ||
     /(subprocessor|vendor|privacy|dpa|security|trust)/.test(lowerEvidenceUrl);
-  const hasListSignals = /(^|\n)\s*(all\s+)?subprocessors\b/i.test(text) ||
+  const hasListSignals = /(^|\n)\s*(?:#{1,6}\s*)?(all\s+)?sub-?processors\b/i.test(text) ||
     /\bsubprocessors\b[\s\S]{0,600}\b(products?:|purpose|service|location)\b/i.test(text) ||
     /\b(products?:|purpose|service|location)\b[\s\S]{0,600}\bsubprocessors\b/i.test(text);
   const structuredVendorListPage = /(subprocessor|sub-processor|vendor)/.test(lowerEvidenceUrl) &&
@@ -670,6 +694,13 @@ export function extractVendorMentionsFromMarkdown(markdown: string, evidenceUrl:
         addMention(mentions, tableCandidate, text, evidenceUrl, sourceType, 0.72);
         continue;
       }
+      // Hosted trust centers often flatten cards to "Vendor • Service" rather
+      // than markdown tables. Keep the vendor name separate from its purpose.
+      const inlineName = trimmed.match(/^([A-Z0-9][^•·]{1,79}?)\s*[•·]\s*\S/)?.[1]?.trim();
+      if (inlineName && !isRejectedVendorCandidate(inlineName)) {
+        addMention(mentions, inlineName, text, evidenceUrl, sourceType, 0.72);
+        continue;
+      }
       if (/^[-*+\d.]\s+/.test(trimmed)) {
         const bulletCandidate = candidateNameFromBullet(trimmed);
         if (bulletCandidate) {
@@ -686,7 +717,7 @@ export function extractVendorMentionsFromMarkdown(markdown: string, evidenceUrl:
   return [...mentions.values()];
 }
 
-export function extractLikelyTrustLinks(markdown: string, baseUrl: string) {
+export function extractLikelyTrustLinks(markdown: string, baseUrl: string, allowHostedTrustCenters = false) {
   const candidates = new Set<string>();
   const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
   let match: RegExpExecArray | null;
@@ -696,25 +727,29 @@ export function extractLikelyTrustLinks(markdown: string, baseUrl: string) {
     if (!href || href.startsWith("#") || href.startsWith("mailto:")) continue;
     try {
       const candidate = new URL(href, baseUrl);
+      if (!/^https?:$/.test(candidate.protocol) || candidate.username || candidate.password) continue;
+      if (/powered\s+by/i.test(linkText) ||
+        (isHostedTrustCenter(candidate.hostname) && /^\/(products?|pricing|demo)(\/|$)/i.test(candidate.pathname))) continue;
       const base = new URL(baseUrl);
       const baseRootDomain = rootDomainFromHost(base.hostname);
       const candidateRootDomain = rootDomainFromHost(candidate.hostname);
       const companyVantaTrustUrl = candidateRootDomain === "vanta.com" &&
         candidate.pathname.toLowerCase().includes(baseRootDomain);
-      if (candidateRootDomain !== baseRootDomain && !companyVantaTrustUrl) {
+      const linkedHostedTrustCenter = allowHostedTrustCenters && isHostedTrustCenter(candidate.hostname);
+      if (candidateRootDomain !== baseRootDomain && !companyVantaTrustUrl && !linkedHostedTrustCenter) {
         continue;
       }
       if (/requestAccessOpen/i.test(candidate.search) || /\/(faq|resources)(\/|$)/i.test(candidate.pathname)) {
         continue;
       }
       const signal = `${linkText} ${candidate.pathname} ${candidate.search}`;
-      if (!/(trust|security|subprocessor|sub-processor|privacy|dpa|data processing|legal|gdpr|vendor)/i.test(signal)) {
+      if (!linkedHostedTrustCenter && !/(trust|security|subprocessor|sub-processor|privacy|dpa|data processing|legal|gdpr|vendor)/i.test(signal)) {
         continue;
       }
       const candidateWithoutHash = `${candidate.origin}${candidate.pathname}${candidate.search}`;
       const baseWithoutHash = `${base.origin}${base.pathname}${base.search}`;
       if (candidateWithoutHash === baseWithoutHash) continue;
-      if (candidate.pathname === "/" && !/(trust|security|privacy|legal|dpa|subprocessor|sub-processor|vendor)/i.test(candidate.hostname)) {
+      if (!linkedHostedTrustCenter && candidate.pathname === "/" && !/(trust|security|privacy|legal|dpa|subprocessor|sub-processor|vendor)/i.test(candidate.hostname)) {
         continue;
       }
       candidate.hash = "";

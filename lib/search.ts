@@ -81,7 +81,10 @@ function buildFilterWhereClause(
     filters.sources.forEach((source, index) => {
       params[`source_${index}`] = source;
     });
-    fragments.push(`c.source_kind IN (${placeholders.join(", ")})`);
+    fragments.push(`(c.source_kind IN (${placeholders.join(", ")}) OR EXISTS (
+      SELECT 1 FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url=lm.source_url
+      WHERE lm.company_id=c.id AND (ls.publisher || '_lists') IN (${placeholders.join(", ")})
+    ))`);
   }
 
   if (filters.batches.length > 0) {
@@ -350,6 +353,8 @@ export async function keywordSearch(params: SearchParams) {
         OR LOWER(c.one_liner) LIKE @query
         OR LOWER(c.long_description) LIKE @query
         OR LOWER(c.search_text) LIKE @query
+        OR EXISTS (SELECT 1 FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url=lm.source_url
+          WHERE lm.company_id=c.id AND LOWER(CONCAT_WS(' ',ls.title,ls.list_year::text,ls.region)) LIKE @query)
       )
     `);
   }
@@ -425,6 +430,8 @@ function buildKeywordAndFilterSql(params: SearchParams) {
         OR LOWER(c.one_liner) LIKE @query
         OR LOWER(c.long_description) LIKE @query
         OR LOWER(c.search_text) LIKE @query
+        OR EXISTS (SELECT 1 FROM company_list_memberships lm JOIN company_list_sources ls ON ls.url=lm.source_url
+          WHERE lm.company_id=c.id AND LOWER(CONCAT_WS(' ',ls.title,ls.list_year::text,ls.region)) LIKE @query)
       )
     `);
   }
@@ -1149,8 +1156,17 @@ export async function getFacets() {
   const yearCounts = new Map<number, number>();
   const sourceCounts = new Map<string, number>();
 
+  const membershipSources = await query<{ source: string; count: string }>(`
+    SELECT source,COUNT(*) AS count FROM (
+      SELECT id,source_kind AS source FROM companies
+      UNION
+      SELECT lm.company_id,ls.publisher || '_lists' FROM company_list_memberships lm
+      JOIN company_list_sources ls ON ls.url=lm.source_url WHERE lm.company_id IS NOT NULL
+    ) origins GROUP BY source
+  `);
+  for (const row of membershipSources) sourceCounts.set(row.source, Number(row.count));
+
   for (const company of companies) {
-    sourceCounts.set(company.source_kind, (sourceCounts.get(company.source_kind) ?? 0) + 1);
     if (company.batch) {
       batchCounts.set(company.batch, (batchCounts.get(company.batch) ?? 0) + 1);
     }

@@ -37,6 +37,7 @@ type ExaContents = {
 };
 
 type ExaSearchOptions = {
+  signal?: AbortSignal;
   numResults?: number;
   type?: ExaSearchType;
   category?: ExaCategory;
@@ -70,6 +71,7 @@ export async function exaSearch<T = unknown>(query: string, options: ExaSearchOp
       "x-api-key": apiKey,
     },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!response.ok) {
