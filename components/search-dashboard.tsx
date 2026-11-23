@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { captureEvent } from "../lib/analytics/client";
+import { questionMetadata } from "../lib/analytics/events";
+import { CompanyFilters } from "./dashboard/company-filters";
 import { BatchAnalyticsChart } from "./dashboard/batch-analytics-chart";
 import { CompanyDetailPanel } from "./dashboard/company-detail-panel";
 import { DashboardCopilotBridge } from "./dashboard/copilot-actions";
@@ -84,10 +87,6 @@ const ALL_TABLE_COLUMNS: Array<{ key: TableColumnKey; label: string }> = [
   { key: "links", label: "Links" },
   { key: "location", label: "Location" },
   { key: "launched_year", label: "Launched year" },
-];
-const DEFAULT_SOURCE_OPTIONS = [
-  { value: "yc", label: "YC", count: 0 },
-  { value: "forbes_ai50", label: "Forbes AI 50", count: 0 },
 ];
 const SEARCH_CACHE_PREFIX = "yc-search:results:v2:";
 
@@ -300,9 +299,31 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     };
   }, [selectedCompanyId]);
 
+  const lastTelemetryQuery = useRef(query);
+  useEffect(() => {
+    if (query !== lastTelemetryQuery.current) {
+      lastTelemetryQuery.current = query;
+      if (query.trim()) captureEvent("search_submitted", { ...questionMetadata(query), surface: activeTab });
+    }
+  }, [query, activeTab]);
+  const filterTelemetry = JSON.stringify({ tags, industries, batches, years, regions, stages, sources, isHiring, nonprofit, topCompany, vendorCategory });
+  const previousFilters = useRef(filterTelemetry);
+  useEffect(() => {
+    if (previousFilters.current === filterTelemetry) return;
+    const previous = JSON.parse(previousFilters.current) as Record<string, unknown>;
+    const current = JSON.parse(filterTelemetry) as Record<string, unknown>;
+    captureEvent("filters_changed", { filter_groups: Object.keys(current).filter(key => JSON.stringify(current[key]) !== JSON.stringify(previous[key])),
+      active_filter_count: Object.values(current).reduce<number>((n, v) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0) });
+    previousFilters.current = filterTelemetry;
+  }, [filterTelemetry]);
+  useEffect(() => {
+    if (selectedCompanyId !== null) captureEvent("company_opened", { company_id: selectedCompanyId, surface: "panel" });
+  }, [selectedCompanyId]);
+
   const [error, setError] = useState<string | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [vendorAnalyticsError, setVendorAnalyticsError] = useState<string | null>(null);
+  const [facetsError, setFacetsError] = useState<string | null>(null);
   const [facets, setFacets] = useState<FacetsPayload | null>(null);
   const [results, setResults] = useState<SearchResponse>({
     total: 0,
@@ -323,12 +344,13 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     fetch("/api/facets")
       .then((response) => response.json())
       .then((payload) => {
+        if (payload.error) throw new Error("Filter options unavailable");
         setFacets(payload);
-        setError(null);
+        setFacetsError(null);
       })
       .catch((fetchError) => {
         const message = fetchError instanceof Error ? fetchError.message : "Could not load facets";
-        setError(message);
+        setFacetsError(message);
       });
   }, []);
 
@@ -434,23 +456,29 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
       setError(null);
     }
 
-    fetch(`/api/search?${queryString}`)
+    const controller = new AbortController();
+    fetch(`/api/search?${queryString}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((payload) => {
         if (payload.error) {
           throw new Error(payload.error);
         }
         setError(null);
+        const searchQuery = new URLSearchParams(queryString).get("q") ?? "";
+        captureEvent("search_results_loaded", { query_length: searchQuery.length, result_count: payload.total, page: payload.page, has_query: Boolean(searchQuery.trim()), view });
         setResults(payload);
         if (view === "table") {
           setCachedSearchResponse(queryString, payload);
         }
       })
       .catch((fetchError) => {
+        if (controller.signal.aborted) return;
+        captureEvent("search_failed", { view });
         const message = fetchError instanceof Error ? fetchError.message : "Search failed";
         setError(message);
       })
-      .finally(() => setResultsLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setResultsLoading(false); });
+    return () => controller.abort();
   }, [cardQueryString, tableQueryString, view]);
 
   useEffect(() => {
@@ -558,11 +586,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
   function toggleSourceFilter(source: string) {
     setPage(1);
     toggleArrayValue(source, sources, setSources);
-  }
-
-  function clearSourceFilters() {
-    setPage(1);
-    setSources([]);
   }
 
   function handleLegendDrilldown(clickedSeries: string | number | undefined) {
@@ -764,13 +787,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
     : view === "table"
       ? `${results.page} / ${totalPages} pages`
       : `${visibleCount.toLocaleString()} loaded`;
-  const sourceOptions = facets?.sources.length
-    ? facets.sources.map((source) => ({
-        value: source.value,
-        label: sourceLabel(source.value),
-        count: source.count,
-      }))
-    : DEFAULT_SOURCE_OPTIONS;
 
   return (
     <div className="w-full">
@@ -960,13 +976,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
                   </button>
                 ) : null}
               </div>
-
-              <SourceTagFilters
-                options={sourceOptions}
-                selectedSources={sources}
-                onToggleSource={toggleSourceFilter}
-                onClearSources={clearSourceFilters}
-              />
           </div>
           <p className="text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{primaryMetricValue}</span>{" "}
@@ -976,6 +985,31 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
             {browseProgressLabel}
           </p>
         </section>
+
+        <CompanyFilters
+          facets={facets}
+          error={facetsError}
+          filters={{ tags, industries, batches, years, regions, stages, sources, isHiring, nonprofit, topCompany }}
+          hasFilters={activeFilters.length > 0}
+          onChange={(patch) => {
+            setPage(1);
+            if (patch.tags) setTags(patch.tags);
+            if (patch.industries) setIndustries(patch.industries);
+            if (patch.batches) setBatches(patch.batches);
+            if (patch.years) setYears(patch.years);
+            if (patch.regions) setRegions(patch.regions);
+            if (patch.stages) setStages(patch.stages);
+            if (patch.sources) setSources(patch.sources);
+            if (patch.isHiring !== undefined) setIsHiring(patch.isHiring);
+            if (patch.nonprofit !== undefined) setNonprofit(patch.nonprofit);
+            if (patch.topCompany !== undefined) setTopCompany(patch.topCompany);
+          }}
+          onClear={() => {
+            setPage(1); setTags([]); setIndustries([]); setBatches([]); setYears([]);
+            setRegions([]); setStages([]); setSources([]); setIsHiring(false);
+            setNonprofit(false); setTopCompany(false); setVendorCategory("");
+          }}
+        />
 
         {activeFilters.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -1160,7 +1194,7 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
                   <div>
                     <CardTitle className="text-lg">Batch analytics</CardTitle>
                     <CardDescription>
-                      Charts live here so the main results view stays search-first and table-first.
+                      Companies with a recognized YC batch. Search charts cover the top 100 matches.
                     </CardDescription>
                   </div>
                   <SegmentedControl
@@ -1337,56 +1371,6 @@ export function SearchDashboard({ copilotEnabled = true }: { copilotEnabled?: bo
         )}
       </div>
       </div>
-    </div>
-  );
-}
-
-function SourceTagFilters({
-  options,
-  selectedSources,
-  onToggleSource,
-  onClearSources,
-}: {
-  options: Array<{ value: string; label: string; count: number }>;
-  selectedSources: string[];
-  onToggleSource: (source: string) => void;
-  onClearSources: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        onClick={onClearSources}
-        className={cn(
-          "rounded-md border px-3 py-1.5 text-sm font-medium transition",
-          selectedSources.length === 0
-            ? "border-border/70 bg-secondary text-secondary-foreground"
-            : "border-border/60 bg-background/50 text-muted-foreground hover:text-foreground",
-        )}
-      >
-        All sources
-      </button>
-      {options.map((option) => {
-        const selected = selectedSources.includes(option.value);
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onToggleSource(option.value)}
-            className={cn(
-              "rounded-md border px-3 py-1.5 text-sm font-medium transition",
-              selected
-                ? "border-primary/35 bg-primary/10 text-primary"
-                : "border-border/60 bg-background/50 text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {option.label}
-            {option.count > 0 ? (
-              <span className="ml-1.5 text-xs opacity-60">{option.count.toLocaleString()}</span>
-            ) : null}
-          </button>
-        );
-      })}
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { Webhook } from "svix";
 import type { WebhookEvent } from "@clerk/nextjs/server";
 
 import { execute, initializeDatabase } from "../../../../lib/db";
+import { upsertUser } from "../../../../lib/user-sync";
+import { captureServerEvent } from "../../../../lib/analytics/server";
 import { getClerkWebhookSecret } from "../../../../lib/env";
 
 export const runtime = "nodejs";
@@ -56,23 +58,12 @@ export async function POST(request: Request) {
         const email = primary?.email_address ?? "";
         const name = [first_name, last_name].filter(Boolean).join(" ").trim() || null;
 
-        await execute(
-          `
-          INSERT INTO users (id, email, name, image_url)
-          VALUES (@id, @email, @name, @image_url)
-          ON CONFLICT (id) DO UPDATE
-          SET email = EXCLUDED.email,
-              name = EXCLUDED.name,
-              image_url = EXCLUDED.image_url,
-              updated_at = NOW()
-          `,
-          {
-            id,
-            email,
-            name,
-            image_url: image_url ?? null,
-          },
-        );
+        const createdAt = new Date(event.data.created_at);
+        await upsertUser({ id, email, name, imageUrl: image_url ?? null, createdAt });
+        if (event.type === "user.created") captureServerEvent(id, "user_signed_up", {
+          $insert_id: `signup:${id}`, signup_method: "clerk",
+          $set_once: { signed_up_at: createdAt.toISOString() },
+        }, createdAt);
         break;
       }
       case "user.deleted": {

@@ -55,6 +55,8 @@
     "openai": "^6.21.0",
     "p-limit": "^7.3.0",
     "pg": "^8.20.0",
+    "posthog-js": "^1.453.0",
+    "posthog-node": "^6.0.5",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",

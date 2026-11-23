@@ -3,6 +3,7 @@ import { Manrope, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { shadcn } from "@clerk/themes";
 
+import { AnalyticsProvider } from "../components/providers/analytics-provider";
 import { ThemeProvider } from "../components/providers/theme-provider";
 import { TooltipProvider } from "../components/ui/tooltip";
 import "./globals.css";
@@ -59,6 +60,7 @@ export default function RootLayout({
     >
       <html lang="en" suppressHydrationWarning>
         <body className={`${sans.variable} ${mono.variable} ${display.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
+          <AnalyticsProvider projectKey={process.env.POSTHOG_PROJECT_KEY || ""} host={process.env.POSTHOG_HOST || "https://us.i.posthog.com"} />
           <ThemeProvider>
             <TooltipProvider>{children}</TooltipProvider>
           </ThemeProvider>

@@ -11,6 +11,7 @@ export type Overview = {
   founders: number;
   hiring: number;
   batchCount: number;
+  companiesWithoutBatch: number;
   /** Newest first. */
   batches: BatchCount[];
   /** Oldest first, for charting. */
@@ -27,6 +28,7 @@ const EMPTY: Overview = {
   founders: 0,
   hiring: 0,
   batchCount: 0,
+  companiesWithoutBatch: 0,
   batches: [],
   years: [],
   industries: [],
@@ -85,6 +87,7 @@ async function loadOverview(): Promise<Overview> {
 
   const batches: BatchCount[] = batchRows
     .map((row) => ({ batch: row.batch, count: Number(row.n), year: batchSortKey(row.batch).year }))
+    .filter(row => row.year !== null)
     .sort((a, b) => compareBatchesNewestFirst(a.batch, b.batch));
 
   const yearMap = new Map<number, number>();
@@ -106,11 +109,13 @@ async function loadOverview(): Promise<Overview> {
   const recentTotal = batches.filter((b) => recentSet.has(b.batch)).reduce((acc, b) => acc + b.count, 0);
   const companies = Number(totals?.companies ?? 0);
 
-  const tagTotals = new Map<string, { all: number; recent: number }>();
+  const ycCompanies = batches.reduce((n, b) => n + b.count, 0);
+  const tagTotals = new Map<string, { all: number; yc: number; recent: number }>();
   for (const row of tagRows) {
-    const entry = tagTotals.get(row.name) ?? { all: 0, recent: 0 };
+    const entry = tagTotals.get(row.name) ?? { all: 0, yc: 0, recent: 0 };
     const n = Number(row.n);
     entry.all += n;
+    if (batchSortKey(row.batch ?? "").year !== null) entry.yc += n;
     if (row.batch && recentSet.has(row.batch)) entry.recent += n;
     tagTotals.set(row.name, entry);
   }
@@ -121,11 +126,11 @@ async function loadOverview(): Promise<Overview> {
     .slice(0, 40);
 
   const trendingTags = [...tagTotals.entries()]
-    .filter(([, v]) => v.recent >= 8 && recentTotal > 0 && companies > 0)
+    .filter(([, v]) => v.recent >= 8 && recentTotal > 0 && ycCompanies > 0 && v.yc > 0)
     .map(([name, v]) => ({
       name,
       recent: v.recent,
-      growth: v.recent / recentTotal / (v.all / companies),
+      growth: v.recent / recentTotal / (v.yc / ycCompanies),
     }))
     .filter((t) => t.growth > 1)
     .sort((a, b) => b.recent * Math.log(b.growth + 1) - a.recent * Math.log(a.growth + 1))
@@ -136,6 +141,7 @@ async function loadOverview(): Promise<Overview> {
     founders: Number(totals?.founders ?? 0),
     hiring: Number(totals?.hiring ?? 0),
     batchCount: batches.length,
+    companiesWithoutBatch: companies - ycCompanies,
     batches,
     years,
     industries: industryRows.map((row) => ({ name: row.name, count: Number(row.n) })),

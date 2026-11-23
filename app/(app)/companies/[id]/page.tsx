@@ -1,3 +1,4 @@
+import { DetailAnalytics } from "../../../../components/providers/detail-analytics";
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -77,6 +78,7 @@ export default async function CompanyPage({
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-[1280px] space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+      <DetailAnalytics kind="company" id={companyId} />
       <div className="flex items-center justify-between gap-4">
         <Button
           asChild
