@@ -1,5 +1,6 @@
 "use client";
 
+import { ChatAnalytics } from "./chat-analytics";
 import { CopilotKit } from "@copilotkit/react-core";
 
 // CopilotKit 1.56's provider defaults `headers`, `properties`, and its agent
@@ -32,6 +33,7 @@ export function CopilotProvider({
 
   return (
     <CopilotKit runtimeUrl="/api/copilotkit" showDevConsole={false} enableInspector={false} {...stableProviderProps}>
+      <ChatAnalytics />
       {children}
     </CopilotKit>
   );

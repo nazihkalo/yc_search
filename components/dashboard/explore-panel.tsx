@@ -83,17 +83,18 @@ export function ExplorePanel({ overview, className }: { overview: Overview | nul
       </section>
 
       <section aria-labelledby="explore-years">
-        <SectionHeading id="explore-years">Companies per year</SectionHeading>
+        <SectionHeading id="explore-years">YC companies by batch year</SectionHeading>
         <YearChart
           years={overview.years}
           batches={overview.batches}
           onSelectYear={(year, values) => explore({ kind: "batch", values, label: String(year) })}
           activeKey={workspace?.activeSelection ?? null}
         />
+        {overview.companiesWithoutBatch > 0 && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{overview.companiesWithoutBatch.toLocaleString()} companies without a YC batch are available in results.</p>}
       </section>
 
       <section aria-labelledby="explore-batches">
-        <SectionHeading id="explore-batches">Batches</SectionHeading>
+        <SectionHeading id="explore-batches">YC batches</SectionHeading>
         <ul className="-mx-2">
           {batches.map((batch) => {
             const selection: ExploreSelection = { kind: "batch", values: [batch.batch], label: batch.batch };

@@ -71,6 +71,8 @@ export type TableColumnKey =
 
 export type AnalyticsResponse = {
   colorBy: "none" | "tags" | "industries";
+  matchedCompanies: number;
+  excludedCompanies: number;
   totalCompanies: number;
   series: string[];
   rows: Array<Record<string, string | number | null>>;

@@ -26,6 +26,10 @@ A full Next.js app for:
 - Crawl4AI (Python runtime) for website scraping
 - OpenAI embeddings (`text-embedding-3-small`) for semantic ranking
 
+## Product analytics
+
+See [PostHog setup, event definitions, and dashboard recipes](docs/analytics.md).
+
 ## Environment
 
 Copy `.env.example` to `.env` (or let `make setup` do it) and set:

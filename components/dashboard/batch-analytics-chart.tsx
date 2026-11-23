@@ -62,7 +62,10 @@ export function BatchAnalyticsChart({
     payload: { payload?: Record<string, string | number | null> } | undefined,
   ) => void;
 }) {
+  if (!analytics?.rows.length) return <p className="py-12 text-center text-sm text-muted-foreground">No companies with a recognized YC batch match these filters.{analytics?.excludedCompanies ? ` ${analytics.excludedCompanies.toLocaleString()} companies without a YC batch remain available in results.` : ""}</p>;
   return (
+    <div>
+    <p className="mb-4 text-xs text-muted-foreground">{analytics.totalCompanies.toLocaleString()} YC companies plotted{analytics.excludedCompanies > 0 ? ` · ${analytics.excludedCompanies.toLocaleString()} without a YC batch excluded from this chart` : ""}</p>
     <div className="h-[360px] w-full lg:h-[420px]">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={analytics?.rows ?? []} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
@@ -134,6 +137,7 @@ export function BatchAnalyticsChart({
           ))}
         </BarChart>
       </ResponsiveContainer>
+    </div>
     </div>
   );
 }

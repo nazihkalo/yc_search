@@ -1,3 +1,4 @@
+import { DetailAnalytics } from "../../../../components/providers/detail-analytics";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowUpRight, Building2, Globe2, Layers3 } from "lucide-react";
@@ -33,6 +34,7 @@ export default async function VendorPage({
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1180px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <DetailAnalytics kind="vendor" id={vendorId} />
       <Button
         asChild
         type="button"

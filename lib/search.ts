@@ -1167,7 +1167,7 @@ export async function getFacets() {
   for (const row of membershipSources) sourceCounts.set(row.source, Number(row.count));
 
   for (const company of companies) {
-    if (company.batch) {
+    if (company.batch && batchSortKey(company.batch).year !== null) {
       batchCounts.set(company.batch, (batchCounts.get(company.batch) ?? 0) + 1);
     }
     for (const tag of parseJsonArray(company.tags)) {
@@ -1289,6 +1289,8 @@ export async function getBatchAnalytics(
       `, queryParams);
   }
 
+  const matchedCompanies = rows.length;
+  rows = rows.filter(row => batchSortKey(row.batch ?? "").year !== null);
   const aggregateByBatch = new Map<string, BatchAggregate>();
   const globalCategoryCounts = new Map<string, number>();
 
@@ -1358,6 +1360,8 @@ export async function getBatchAnalytics(
   return {
     colorBy,
     totalCompanies: rows.length,
+    matchedCompanies,
+    excludedCompanies: matchedCompanies - rows.length,
     series: colorBy === "none" ? ["total"] : [...topCategories, "Other"],
     rows: chartRows,
   };

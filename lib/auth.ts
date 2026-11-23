@@ -1,6 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
-import { execute, queryOne } from "./db";
+import { captureServerEvent } from "./analytics/server";
+import { upsertUser } from "./user-sync";
+import { execute, queryOne, initializeDatabase } from "./db";
 
 export type AppUser = {
   id: string;
@@ -25,10 +27,22 @@ export async function getCurrentUserId(): Promise<string | null> {
 export async function getCurrentUser(): Promise<AppUser | null> {
   const userId = await getCurrentUserId();
   if (!userId) return null;
-  const row = await queryOne<AppUser>(
+  await initializeDatabase();
+  let row = await queryOne<AppUser>(
     "SELECT id, email, name, image_url, plan, created_at FROM users WHERE id = @id",
     { id: userId },
   );
+  if (!row) {
+    const profile = await currentUser();
+    if (!profile || profile.id !== userId) return null;
+    await upsertUser({ id: profile.id,
+      email: profile.primaryEmailAddress?.emailAddress ?? profile.emailAddresses[0]?.emailAddress ?? "",
+      name: profile.fullName, imageUrl: profile.imageUrl, createdAt: new Date(profile.createdAt) });
+    captureServerEvent(profile.id, "user_signed_up", { $insert_id: `signup:${profile.id}`,
+      signup_method: "clerk", recovered_webhook: true,
+      $set_once: { signed_up_at: new Date(profile.createdAt).toISOString() } }, new Date(profile.createdAt));
+    row = await queryOne<AppUser>("SELECT id, email, name, image_url, plan, created_at FROM users WHERE id = @id", { id: userId });
+  }
   return row ?? null;
 }
 
@@ -47,8 +61,9 @@ export function userMeetsPlan(user: AppUser | null, minPlan: AppUser["plan"]): b
 }
 
 export async function requirePlan(_minPlan: AppUser["plan"]): Promise<{ userId: string | null; allowed: boolean }> {
+  void _minPlan;
   // Monetization hook: during beta every authenticated user is allowed on every endpoint.
   // Flip this to check the users.plan column once Clerk Billing is enabled.
-  const userId = await getCurrentUserId();
-  return { userId, allowed: Boolean(userId) };
+  const user = await getCurrentUser();
+  return { userId: user?.id ?? null, allowed: Boolean(user) };
 }

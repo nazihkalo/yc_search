@@ -18,6 +18,8 @@ export async function GET(request: Request) {
       return NextResponse.json({
         colorBy,
         totalCompanies: 0,
+        matchedCompanies: 0,
+        excludedCompanies: 0,
         series: colorBy === "none" ? ["total"] : [],
         rows: [],
       });

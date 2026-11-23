@@ -1,5 +1,7 @@
 "use client";
 
+import { captureEvent } from "../../lib/analytics/client";
+import { questionMetadata } from "../../lib/analytics/events";
 import Link from "next/link";
 import { ArrowRight, Loader2, Send } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -43,6 +45,8 @@ export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { sugge
       // storage unavailable
     }
 
+    const started = Date.now();
+    captureEvent("preview_question_submitted", questionMetadata(trimmed));
     setPhase("streaming");
     setAnswer("");
     setCitations([]);
@@ -60,6 +64,7 @@ export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { sugge
         if (typeof window !== "undefined") {
           window.localStorage.setItem(STORAGE_KEY, trimmed);
         }
+        captureEvent("preview_rate_limited");
         setPhase("rate_limited");
         return;
       }
@@ -67,6 +72,7 @@ export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { sugge
       if (!response.ok || !response.body) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         setErrorMessage(payload?.message ?? "Could not run that question.");
+        captureEvent("preview_answer_failed", { reason: "http" });
         setPhase("error");
         return;
       }
@@ -74,6 +80,7 @@ export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { sugge
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let completed = false;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -93,12 +100,14 @@ export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { sugge
           if (!dataPayload) continue;
           try {
             const parsed = JSON.parse(dataPayload);
+            if (eventName === "done") completed = true;
             if (eventName === "citations" && Array.isArray(parsed)) {
               setCitations(parsed as Citation[]);
             } else if (eventName === "delta" && typeof parsed === "string") {
               setAnswer((prev) => prev + parsed);
             } else if (eventName === "error" && parsed?.message) {
               setErrorMessage(String(parsed.message));
+              captureEvent("preview_answer_failed", { reason: "stream" });
               setPhase("error");
               return;
             }
@@ -108,8 +117,11 @@ export function LandingChatPrompt({ suggestions = DEFAULT_SUGGESTIONS }: { sugge
         }
       }
 
+      if (!completed) throw new Error("The response ended before completion. Please try again.");
+      captureEvent("preview_answer_completed", { duration_ms: Date.now() - started });
       setPhase("done");
     } catch (error) {
+      captureEvent("preview_answer_failed", { reason: "network" });
       const message = error instanceof Error ? error.message : "Network error";
       setErrorMessage(message);
       setPhase("error");
